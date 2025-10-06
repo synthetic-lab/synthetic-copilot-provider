@@ -1,5 +1,7 @@
 ![Synthetic](./assets/logo_1200_300.png)
 
+> **Special thanks to [@mcowger](https://github.com/mcowger) for creating this project!**
+
 # [Synthetic](https://synthetic.new) Provider for GitHub Copilot Chat
 
 Use your [Synthetic](https://synthetic.new/) account with Github Copilot in VS Code!

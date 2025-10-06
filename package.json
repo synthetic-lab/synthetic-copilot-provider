@@ -45,7 +45,7 @@
 		"format": "prettier --write .",
 		"watch": "tsc -watch -p ./",
 		"test": "npm run compile && vscode-test",
-		"package": "vsce package --out synthetic-vscode-chat.vsix",
+		"package": "vsce package --out synthetic-vscode-chat.vsix"
 	},
 	"dependencies": {
 		"axios": "^1.12.2"
