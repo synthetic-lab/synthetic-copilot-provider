@@ -1,0 +1,62 @@
+{
+	"name": "synthetic-vscode-chat",
+	"publisher": "Synthetic",
+	"displayName": "Synthetic Provider for GitHub Copilot Chat",
+	"description": "An extension that integrates Synthetic Inference Providers into GitHub Copilot Chat",
+	"icon": "assets/logo.png",
+	"version": "0.0.5",
+	"engines": {
+		"vscode": "^1.104.0"
+	},
+	"categories": [
+		"AI",
+		"Chat"
+	],
+	"galleryBanner": {
+		"color": "#100f11",
+		"theme": "dark"
+	},
+	"homepage": "https://synthetic.new",
+	"license": "MIT",
+	"contributes": {
+		"languageModelChatProviders": [
+			{
+				"vendor": "synthetic",
+				"displayName": "Synthetic",
+				"managementCommand": "synthetic.manage"
+			}
+		],
+		"commands": [
+			{
+				"command": "synthetic.manage",
+				"title": "Manage Synthetic Provider"
+			}
+		]
+	},
+	"main": "./out/extension.js",
+	"scripts": {
+		"vscode:prepublish": "npm run compile",
+		"compile": "tsc -p ./",
+		"lint": "eslint",
+		"format": "prettier --write .",
+		"watch": "tsc -watch -p ./",
+		"test": "npm run compile && vscode-test"
+	},
+	"dependencies": {
+		"axios": "^1.12.2"
+	},
+	"devDependencies": {
+		"@eslint/js": "^9.13.0",
+		"@stylistic/eslint-plugin": "^2.9.0",
+		"@types/mocha": "^10.0.6",
+		"@types/node": "^22",
+		"@types/vscode": "^1.103.0",
+		"@vscode/dts": "^0.4.1",
+		"@vscode/test-cli": "^0.0.11",
+		"@vscode/test-electron": "^2.5.2",
+		"eslint": "^9.13.0",
+		"prettier": "^3.1.0",
+		"typescript": "^5.9.2",
+		"typescript-eslint": "^8.39.0"
+	}
+}
