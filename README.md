@@ -5,19 +5,26 @@ Use frontier open LLMs like Kimi K2, DeepSeek V3.1, GLM 4.5 and more in VS Code 
 ---
 
 ## ⚡ Quick Start
-1. Install the Synethic Copilot Chat extension.
-2. Open VS Code's chat interface.
-3. Click the model picker and click "Manage Models...".
-4. Select "Synthetic" provider.
-5. Provide your Synthetic API Token.
-6. Choose the models you want to add to the model picker. 🥳
+1. Install the [Github Copilot](https://marketplace.visualstudio.com/items?itemName=GitHub.copilot) extension.
+3. Open VS Code's chat interface.
+   - **Windows/Linux** default: <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>I</kbd>
+   - **Mac** default: <kbd>Cmd</kbd> + <kbd>Ctrl</kbd> + <kbd>I</kbd>
+   - or: View > Chat
+4. Click the model picker and click "Manage Models...".
+   ![Manage Models](./assets/docs_manage_models.png)
+6. Select "Synthetic" provider.
+   ![Select Provider](./assets/docs_manage_models.png)
+8. Provide your Synthetic API Token. (Get yours here: https://synthetic.new/user-settings/api)
+   ![Enter API Token](./assets/docs_enter_api_key.png)
+10. Choose the models you want to add to the model picker. 🥳
+   ![Select Models](./assets/docs_model_list.png)
 
 ## ✨ Why use the Synthetic provider in Copilot
 * Integrate custom or experimental LLM endpoints directly into VS Code Copilot Chat.
 * Flexibly test and use models not available through standard providers.
 * Designed for extensibility and rapid prototyping of new chat model integrations.
 
-💡 The Synthetic provider allows you to connect to your own model endpoints or experimental APIs, making it ideal for advanced users and developers who want full control over their chat experience.
+💡 The Synthetic provider allows you to use dozens of open-weight models via API, making it ideal for advanced users and developers who want full control over their chat experience.
 
 ---
 
@@ -25,12 +32,14 @@ Use frontier open LLMs like Kimi K2, DeepSeek V3.1, GLM 4.5 and more in VS Code 
 * VS Code 1.104.0 or higher.
 
 ## 🛠️ Development
+
 ```bash
-git clone the repo
-npm install
-npm run compile
+git clone https://github.com/mcowger/synthetic-vscode-chat.git
+cd synthetic-vscode-chat
+npm run package
+# Ctrl+Shift+P / Cmd+Shift+P > "Extensions: Install from VSIX" OR
+code --install-extension synthetic-vscode-chat.vsix
 ```
-Press F5 to launch an Extension Development Host.
 
 Common scripts:
 * Build: `npm run compile`
@@ -44,4 +53,5 @@ Common scripts:
 * VS Code Chat Provider API: https://code.visualstudio.com/api/extension-guides/ai/language-model-chat-provider
 
 ---
+
 
