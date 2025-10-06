@@ -1,4 +1,4 @@
-# 🤗 Synthetic Provider for GitHub Copilot Chat
+# 🤗 [Synthetic](https://synthetic.new) Provider for GitHub Copilot Chat
 
 Use frontier open LLMs like Kimi K2, DeepSeek V3.1, GLM 4.5 and more in VS Code with GitHub Copilot Chat powered by the Synthetic provider, which enables integration with custom or experimental LLM endpoints for advanced chat capabilities. 🔥
 
@@ -42,8 +42,11 @@ Use frontier open LLMs like Kimi K2, DeepSeek V3.1, GLM 4.5 and more in VS Code 
 
 ```bash
 git clone https://github.com/mcowger/synthetic-vscode-chat.git
+
 cd synthetic-vscode-chat
+
 npm run package
+
 # Ctrl+Shift+P / Cmd+Shift+P > "Extensions: Install from VSIX" OR
 code --install-extension synthetic-vscode-chat.vsix
 ```
