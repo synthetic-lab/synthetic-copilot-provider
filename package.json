@@ -1,10 +1,10 @@
 {
-	"name": "synthetic-vscode-chat",
-	"publisher": "Synthetic",
-	"displayName": "Synthetic Provider for GitHub Copilot Chat",
-	"description": "An extension that integrates Synthetic Inference Providers into GitHub Copilot Chat",
+	"name": "synthetic-copilot-provider",
+	"publisher": "SyntheticLab",
+	"displayName": "Synthetic Provider for GitHub Copilot",
+	"description": "Synthetic Provider for Github Copilot",
 	"icon": "assets/logo.png",
-	"version": "0.0.5",
+	"version": "0.0.6",
 	"engines": {
 		"vscode": "^1.104.0"
 	},
@@ -45,7 +45,7 @@
 		"format": "prettier --write .",
 		"watch": "tsc -watch -p ./",
 		"test": "npm run compile && vscode-test",
-		"package": "vsce package --out synthetic-vscode-chat.vsix"
+		"package": "vsce package --out synthetic-copilot-provider.vsix"
 	},
 	"dependencies": {
 		"axios": "^1.12.2"
