@@ -11,13 +11,20 @@ Use frontier open LLMs like Kimi K2, DeepSeek V3.1, GLM 4.5 and more in VS Code 
    - **Mac** default: <kbd>Cmd</kbd> + <kbd>Ctrl</kbd> + <kbd>I</kbd>
    - or: View > Chat
 4. Click the model picker and click "Manage Models...".
-   ![Manage Models](./assets/docs_manage_models.png)
+
+   <img src="./assets/docs_manage_models.png" width="500">
+
 6. Select "Synthetic" provider.
-   ![Select Provider](./assets/docs_manage_models.png)
+
+   <img src="./assets/docs_select_provider.png" width="500">
+
 8. Provide your Synthetic API Token. (Get yours here: https://synthetic.new/user-settings/api)
-   ![Enter API Token](./assets/docs_enter_api_key.png)
+
+   <img src="./assets/docs_enter_api_key.png" width="500">
+
 10. Choose the models you want to add to the model picker. 🥳
-   ![Select Models](./assets/docs_model_list.png)
+
+    <img src="./assets/docs_model_list.png" width="500">
 
 ## ✨ Why use the Synthetic provider in Copilot
 * Integrate custom or experimental LLM endpoints directly into VS Code Copilot Chat.
