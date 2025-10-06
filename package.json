@@ -4,7 +4,7 @@
 	"displayName": "Synthetic Provider for GitHub Copilot",
 	"description": "Synthetic Provider for Github Copilot",
 	"icon": "assets/logo.png",
-	"version": "0.0.6",
+	"version": "0.0.7",
 	"engines": {
 		"vscode": "^1.104.0"
 	},
@@ -20,7 +20,7 @@
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/mcowger/synthetic-vscode-chat.git"
+		"url": "https://github.com/synthetic-lab/synthetic-copilot-provider"
 	},
 	"contributes": {
 		"languageModelChatProviders": [
