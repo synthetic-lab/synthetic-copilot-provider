@@ -4,14 +4,13 @@ import {
 	LanguageModelChatInformation,
 	LanguageModelChatMessage,
 	LanguageModelChatProvider,
-	LanguageModelChatRequestHandleOptions,
+	LanguageModelChatRequestMessage,
+	ProvideLanguageModelChatResponseOptions,
 	LanguageModelResponsePart,
 	Progress,
 } from "vscode";
 
 import type { SyntheticModelItem, SyntheticModelsResponse, SyntheticModelDetails } from "./types";
-
-import axios, { AxiosError } from "axios";
 
 import { convertTools, convertMessages, tryParseJSONObject, validateRequest } from "./utils";
 
@@ -71,12 +70,15 @@ export class SyntheticChatModelProvider implements LanguageModelChatProvider {
 	constructor(private readonly secrets: vscode.SecretStorage, private readonly userAgent: string) { }
 
 	/** Roughly estimate tokens for VS Code chat messages (text only) */
-	private estimateMessagesTokens(msgs: readonly vscode.LanguageModelChatMessage[]): number {
+	private estimateMessagesTokens(msgs: readonly LanguageModelChatMessage[] | readonly LanguageModelChatRequestMessage[]): number {
 		let total = 0;
 		for (const m of msgs) {
 			for (const part of m.content) {
+				// Handle both old and new message types
 				if (part instanceof vscode.LanguageModelTextPart) {
-					total += Math.ceil(part.value.length / 4);
+					total += Math.ceil((part as any).value.length / 4);
+				} else if (typeof part === 'object' && part !== null && 'value' in part && typeof (part as any).value === 'string') {
+					total += Math.ceil((part as any).value.length / 4);
 				}
 			}
 		}
@@ -170,32 +172,33 @@ export class SyntheticChatModelProvider implements LanguageModelChatProvider {
 	): Promise<{ models: SyntheticModelItem[] }> {
 		console.debug("[Synthetic Model Provider] fetchModels called with apiKey:", apiKey);
 		try {
-			const response = await axios.get<SyntheticModelsResponse>(`${BASE_URL}/models`, {
+			const response = await fetch(`${BASE_URL}/models`, {
 				headers: {
 					Authorization: `Bearer ${apiKey}`,
 					"User-Agent": this.userAgent,
 				},
-				responseType: "json",
 			});
-			const models = response.data?.data ?? [];
+
+			if (!response.ok) {
+				const errorText = await response.text();
+				console.error("[Synthetic Model Provider] Failed to fetch Synthetic models", {
+					status: response.status,
+					statusText: response.statusText,
+					detail: errorText,
+				});
+				throw new Error(
+					`Failed to fetch Synthetic models: ${response.status}${response.statusText ? ` ${response.statusText}` : ""}${errorText ? `\n${errorText}` : ""}`
+				);
+			}
+
+			const data = await response.json() as SyntheticModelsResponse;
+			const models = data?.data ?? [];
 			console.debug("[Synthetic Model Provider] fetchModels succeeded", { count: models.length });
 			return { models };
 		} catch (error) {
-			if (axios.isAxiosError(error)) {
-				const err = error as AxiosError;
-				const status = err.response?.status ?? "unknown";
-				const statusText = err.response?.statusText ?? "";
-				const detail = typeof err.response?.data === "string"
-					? err.response.data
-					: err.response?.data ? JSON.stringify(err.response.data) : err.message;
-				console.error("[Synthetic Model Provider] Failed to fetch Synthetic models", {
-					status,
-					statusText,
-					detail,
-				});
-				throw new Error(
-					`Failed to fetch Synthetic models: ${status}${statusText ? ` ${statusText}` : ""}${detail ? `\n${detail}` : ""}`
-				);
+			if (error instanceof Error) {
+				console.error("[Synthetic Model Provider] Failed to fetch Synthetic models", error);
+				throw error;
 			}
 			console.error("[Synthetic Model Provider] Failed to fetch Synthetic models", error);
 			console.debug("[Synthetic Model Provider] fetchModels throwing error");
@@ -215,8 +218,8 @@ export class SyntheticChatModelProvider implements LanguageModelChatProvider {
 	 */
 	async provideLanguageModelChatResponse(
 		model: LanguageModelChatInformation,
-		messages: readonly LanguageModelChatMessage[],
-		options: LanguageModelChatRequestHandleOptions,
+		messages: readonly LanguageModelChatRequestMessage[],
+		options: ProvideLanguageModelChatResponseOptions,
 		progress: Progress<LanguageModelResponsePart>,
 		token: CancellationToken
 	): Promise<void> {
@@ -361,7 +364,7 @@ export class SyntheticChatModelProvider implements LanguageModelChatProvider {
 	 */
 	async provideTokenCount(
 		model: LanguageModelChatInformation,
-		text: string | LanguageModelChatMessage,
+		text: string | LanguageModelChatRequestMessage,
 		_token: CancellationToken
 	): Promise<number> {
 		if (typeof text === "string") {
@@ -369,8 +372,11 @@ export class SyntheticChatModelProvider implements LanguageModelChatProvider {
 		} else {
 			let totalTokens = 0;
 			for (const part of text.content) {
+				// Handle both old and new message types
 				if (part instanceof vscode.LanguageModelTextPart) {
-					totalTokens += Math.ceil(part.value.length / 4);
+					totalTokens += Math.ceil((part as any).value.length / 4);
+				} else if (typeof part === 'object' && part !== null && 'value' in part && typeof (part as any).value === 'string') {
+					totalTokens += Math.ceil((part as any).value.length / 4);
 				}
 			}
 			return totalTokens;
@@ -411,7 +417,19 @@ export class SyntheticChatModelProvider implements LanguageModelChatProvider {
 				let attempt = 0;
 				while (attempt < maxRetries) {
 					try {
-						response = await axios.get('https://models.dev/api.json', { timeout: 5000 });
+						const controller = new AbortController();
+						const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+						response = await fetch('https://models.dev/api.json', {
+							signal: controller.signal,
+						});
+
+						clearTimeout(timeoutId);
+
+						if (!response.ok) {
+							throw new Error(`HTTP error! status: ${response.status}`);
+						}
+
 						break;
 					} catch (err) {
 						attempt++;
@@ -422,7 +440,8 @@ export class SyntheticChatModelProvider implements LanguageModelChatProvider {
 						await new Promise(res => setTimeout(res, 500 * attempt));
 					}
 				}
-				this._modelDetailsCache = response!.data.synthetic.models;
+				const data = await response!.json() as { synthetic: { models: Record<string, SyntheticModelDetails> } };
+				this._modelDetailsCache = data.synthetic.models;
 			}
 			const modelDetails = this._modelDetailsCache![modelId];
 

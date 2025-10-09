@@ -4,7 +4,7 @@
 	"displayName": "Synthetic Provider for GitHub Copilot",
 	"description": "Synthetic Provider for Github Copilot",
 	"icon": "assets/logo.png",
-	"version": "0.0.7",
+	"version": "0.8.0",
 	"engines": {
 		"vscode": "^1.104.0"
 	},
@@ -47,19 +47,16 @@
 		"test": "npm run compile && vscode-test",
 		"package": "vsce package --out synthetic-copilot-provider.vsix"
 	},
-	"dependencies": {
-		"axios": "^1.12.2"
-	},
 	"devDependencies": {
 		"@eslint/js": "^9.13.0",
 		"@stylistic/eslint-plugin": "^2.9.0",
 		"@types/mocha": "^10.0.6",
 		"@types/node": "^22",
-		"@types/vscode": "^1.103.0",
+		"@types/vscode": "^1.104.0",
 		"@vscode/dts": "^0.4.1",
 		"@vscode/test-cli": "^0.0.11",
 		"@vscode/test-electron": "^2.5.2",
-		"@vscode/vsce": "^3.2.1",
+		"@vscode/vsce": "^3.2.2",
 		"eslint": "^9.13.0",
 		"prettier": "^3.1.0",
 		"typescript": "^5.9.2",

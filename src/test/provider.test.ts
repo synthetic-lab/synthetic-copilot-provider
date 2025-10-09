@@ -109,7 +109,7 @@ suite("Synthetic Chat Provider Extension", () => {
 						capabilities: {},
 					} as unknown as vscode.LanguageModelChatInformation,
 					[],
-					{} as unknown as vscode.LanguageModelChatRequestHandleOptions,
+					{} as unknown as vscode.ProvideLanguageModelChatResponseOptions,
 					{ report: () => { } },
 					new vscode.CancellationTokenSource().token
 				);
@@ -178,6 +178,7 @@ suite("Synthetic Chat Provider Extension", () => {
 	suite("utils/tools", () => {
 		test("convertTools returns function tool definitions", () => {
 			const out = convertTools({
+				toolMode: vscode.LanguageModelChatToolMode.Auto,
 				tools: [
 					{
 						name: "do_something",
@@ -185,7 +186,7 @@ suite("Synthetic Chat Provider Extension", () => {
 						inputSchema: { type: "object", properties: { x: { type: "number" } }, additionalProperties: false },
 					},
 				],
-			} satisfies vscode.LanguageModelChatRequestHandleOptions);
+			} satisfies vscode.ProvideLanguageModelChatResponseOptions);
 
 			assert.ok(out);
 			assert.equal(out.tool_choice, "auto");
@@ -203,7 +204,7 @@ suite("Synthetic Chat Provider Extension", () => {
 						inputSchema: {},
 					},
 				],
-			} satisfies vscode.LanguageModelChatRequestHandleOptions);
+			} satisfies vscode.LanguageModelChatRequestOptions);
 			assert.deepEqual(out.tool_choice, { type: "function", function: { name: "only_tool" } });
 		});
 
