@@ -12,7 +12,7 @@ import {
 
 import type { SyntheticModelItem, SyntheticModelsResponse, SyntheticModelDetails } from "./types";
 
-import { convertTools, convertMessages, tryParseJSONObject, validateRequest } from "./utils";
+import { convertTools, convertMessages, tryParseJSONObject, validateRequest, stripControlTokens, estimateMessagesTokens, estimateToolTokens } from "./utils";
 import { SyntheticModelsService } from "./syntheticModels";
 
 const BASE_URL = "https://api.synthetic.new/openai/v1";
@@ -72,32 +72,7 @@ export class SyntheticChatModelProvider implements LanguageModelChatProvider {
 		this._modelsService = new SyntheticModelsService(userAgent);
 	}
 
-	/** Roughly estimate tokens for VS Code chat messages (text only) */
-	private estimateMessagesTokens(msgs: readonly LanguageModelChatMessage[] | readonly LanguageModelChatRequestMessage[]): number {
-		let total = 0;
-		for (const m of msgs) {
-			for (const part of m.content) {
-				// Handle both old and new message types
-				if (part instanceof vscode.LanguageModelTextPart) {
-					total += Math.ceil((part as any).value.length / 4);
-				} else if (typeof part === 'object' && part !== null && 'value' in part && typeof (part as any).value === 'string') {
-					total += Math.ceil((part as any).value.length / 4);
-				}
-			}
-		}
-		return total;
-	}
 
-	/** Rough token estimate for tool definitions by JSON size */
-	private estimateToolTokens(tools: { type: string; function: { name: string; description?: string; parameters?: object } }[] | undefined): number {
-		if (!tools || tools.length === 0) { return 0; }
-		try {
-			const json = JSON.stringify(tools);
-			return Math.ceil(json.length / 4);
-		} catch {
-			return 0;
-		}
-	}
 
 	/**
 	 * Get the list of available language models contributed by this provider
@@ -112,7 +87,7 @@ export class SyntheticChatModelProvider implements LanguageModelChatProvider {
 		console.debug("[Synthetic Model Provider] prepareLanguageModelChatInformation invoked", {
 			silent: options.silent,
 		});
-		const apiKey = await this.ensureApiKey(options.silent);
+		const apiKey = await this._modelsService.ensureApiKey(this.secrets, options.silent);
 		if (!apiKey) {
 			console.debug("[Synthetic Model Provider] No API key available, returning empty provider list");
 			return [];
@@ -214,7 +189,7 @@ export class SyntheticChatModelProvider implements LanguageModelChatProvider {
 			},
 		};
 		try {
-			const apiKey = await this.ensureApiKey(true);
+			const apiKey = await this._modelsService.ensureApiKey(this.secrets, true);
 			if (!apiKey) {
 				throw new Error("Synthetic API key not found");
 			}
@@ -236,8 +211,8 @@ export class SyntheticChatModelProvider implements LanguageModelChatProvider {
 				throw new Error(`Cannot have more than ${MAX_TOOLS} tools per request.`);
 			}
 
-			const inputTokenCount = this.estimateMessagesTokens(messages);
-			const toolTokenCount = this.estimateToolTokens(toolConfig.tools);
+			const inputTokenCount = estimateMessagesTokens(messages);
+			const toolTokenCount = estimateToolTokens(toolConfig.tools);
 			const tokenLimit = Math.max(1, model.maxInputTokens);
 			if (inputTokenCount + toolTokenCount > tokenLimit) {
 				console.error("[Synthetic Model Provider] Message exceeds token limit", { total: inputTokenCount + toolTokenCount, tokenLimit });
@@ -343,26 +318,7 @@ export class SyntheticChatModelProvider implements LanguageModelChatProvider {
 		}
 	}
 
-	/**
-	 * Ensure an API key exists in SecretStorage, optionally prompting the user when not silent.
-	 * @param silent If true, do not prompt the user.
-	 */
-	private async ensureApiKey(silent: boolean): Promise<string | undefined> {
-		let apiKey = await this.secrets.get("synthetic.apiKey");
-		if (!apiKey && !silent) {
-			const entered = await vscode.window.showInputBox({
-				title: "Synthetic API Key",
-				prompt: "Enter your Synthetic API key",
-				ignoreFocusOut: true,
-				password: true,
-			});
-			if (entered && entered.trim()) {
-				apiKey = entered.trim();
-				await this.secrets.store("synthetic.apiKey", apiKey);
-			}
-		}
-		return apiKey;
-	}
+
 
 	/**
 	 * Read and parse the streaming (SSE-like) response and report parts.
@@ -554,13 +510,13 @@ export class SyntheticChatModelProvider implements LanguageModelChatProvider {
 					})();
 					if (longestPartialPrefix > 0) {
 						const visible = data.slice(0, data.length - longestPartialPrefix);
-						if (visible) { visibleOut += this.stripControlTokens(visible); }
+						if (visible) { visibleOut += stripControlTokens(visible); }
 						this._textToolParserBuffer = data.slice(data.length - longestPartialPrefix);
 						data = "";
 						break;
 					} else {
 						// All visible, clean other control tokens
-						visibleOut += this.stripControlTokens(data);
+						visibleOut += stripControlTokens(data);
 						data = "";
 						break;
 					}
@@ -568,7 +524,7 @@ export class SyntheticChatModelProvider implements LanguageModelChatProvider {
 				// Emit text before the token
 				const pre = data.slice(0, b);
 				if (pre) {
-					visibleOut += this.stripControlTokens(pre);
+							visibleOut += stripControlTokens(pre);
 				}
 				// Advance past BEGIN
 				data = data.slice(b + BEGIN.length);
@@ -763,16 +719,6 @@ export class SyntheticChatModelProvider implements LanguageModelChatProvider {
 		}
 	}
 
-	/** Strip provider control tokens like <|tool_calls_section_begin|> and <|tool_call_begin|> from streamed text. */
-	private stripControlTokens(text: string): string {
-		try {
-			// Remove section markers and explicit tool call begin/argument/end markers that some backends stream as text
-			return text
-				.replace(/<\|[a-zA-Z0-9_-]+_section_(?:begin|end)\|>/g, "")
-				.replace(/<\|tool_call_(?:argument_)?(?:begin|end)\|>/g, "");
-		} catch {
-			return text;
-		}
-	}
+
 
 }

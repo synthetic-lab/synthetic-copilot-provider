@@ -1,3 +1,4 @@
+import * as vscode from "vscode";
 import type { SyntheticModelItem, SyntheticModelsResponse, SyntheticModelDetails } from "./types";
 
 const BASE_URL = "https://api.synthetic.new/openai/v1";
@@ -11,6 +12,28 @@ export class SyntheticModelsService {
     private _modelDetailsCache: Record<string, SyntheticModelDetails> | null = null;
 
     constructor(private readonly userAgent: string) {}
+
+    /**
+     * Ensure an API key exists in SecretStorage, optionally prompting the user when not silent.
+     * @param secrets VS Code secret storage.
+     * @param silent If true, do not prompt the user.
+     */
+    async ensureApiKey(secrets: vscode.SecretStorage, silent: boolean): Promise<string | undefined> {
+        let apiKey = await secrets.get("synthetic.apiKey");
+        if (!apiKey && !silent) {
+            const entered = await vscode.window.showInputBox({
+                title: "Synthetic API Key",
+                prompt: "Enter your Synthetic API key",
+                ignoreFocusOut: true,
+                password: true,
+            });
+            if (entered && entered.trim()) {
+                apiKey = entered.trim();
+                await secrets.store("synthetic.apiKey", apiKey);
+            }
+        }
+        return apiKey;
+    }
 
     /**
      * Fetch the list of models and supplementary metadata from Synthetic.

@@ -361,3 +361,54 @@ export function tryParseJSONObject(text: string): { ok: true; value: Record<stri
 		return { ok: false };
 	}
 }
+
+/**
+ * Strip provider control tokens like <|tool_calls_section_begin|> and <|tool_call_begin|> from streamed text.
+ * @param text The input text containing control tokens.
+ * @returns Clean text with control tokens removed.
+ */
+export function stripControlTokens(text: string): string {
+	try {
+		// Remove section markers and explicit tool call begin/argument/end markers that some backends stream as text
+		return text
+			.replace(/<\|[a-zA-Z0-9_-]+_section_(?:begin|end)\|>/g, "")
+			.replace(/<\|tool_call_(?:argument_)?(?:begin|end)\|>/g, "");
+	} catch {
+		return text;
+	}
+}
+
+/**
+ * Roughly estimate tokens for VS Code chat messages (text only)
+ * @param msgs Messages to estimate tokens for
+ * @returns Estimated token count
+ */
+export function estimateMessagesTokens(msgs: readonly vscode.LanguageModelChatMessage[] | readonly vscode.LanguageModelChatRequestMessage[]): number {
+	let total = 0;
+	for (const m of msgs) {
+		for (const part of m.content) {
+			// Handle both old and new message types
+			if (part instanceof vscode.LanguageModelTextPart) {
+				total += Math.ceil((part as any).value.length / 4);
+			} else if (typeof part === 'object' && part !== null && 'value' in part && typeof (part as any).value === 'string') {
+				total += Math.ceil((part as any).value.length / 4);
+			}
+		}
+	}
+	return total;
+}
+
+/**
+ * Rough token estimate for tool definitions by JSON size
+ * @param tools Tools to estimate tokens for
+ * @returns Estimated token count
+ */
+export function estimateToolTokens(tools: { type: string; function: { name: string; description?: string; parameters?: object } }[] | undefined): number {
+	if (!tools || tools.length === 0) { return 0; }
+	try {
+		const json = JSON.stringify(tools);
+		return Math.ceil(json.length / 4);
+	} catch {
+		return 0;
+	}
+}
