@@ -2,36 +2,29 @@ import * as vscode from "vscode";
 import {
 	CancellationToken,
 	LanguageModelChatInformation,
-	LanguageModelChatMessage,
 	LanguageModelChatProvider,
 	LanguageModelChatRequestMessage,
 	ProvideLanguageModelChatResponseOptions,
 	LanguageModelResponsePart,
 	Progress,
 } from "vscode";
-
-import type { SyntheticModelItem, SyntheticModelsResponse, SyntheticModelDetails } from "./types";
-
-import { convertTools, convertMessages, tryParseJSONObject, validateRequest, stripControlTokens, estimateMessagesTokens, estimateToolTokens } from "./utils";
-import { SyntheticModelsService } from "./syntheticModels";
-
-const BASE_URL = "https://api.synthetic.new/openai/v1";
-const DEFAULT_MAX_OUTPUT_TOKENS = 16000;
-const DEFAULT_CONTEXT_LENGTH = 128000;
-const MAX_TOOLS = 128;
-
-const DEFAULT_MODEL_DETAILS = {
-	tooltip: "Synthetic",
-	family: "synthetic",
-	detail: "Synthetic.new",
-	version: "1.0.0",
-	maxInputTokens: DEFAULT_CONTEXT_LENGTH,
-	maxOutputTokens: DEFAULT_MAX_OUTPUT_TOKENS,
-	capabilities: {
-		toolCalling: false,
-		imageInput: false,
-	},
-} satisfies Partial<LanguageModelChatInformation>;
+import {
+	convertTools,
+	convertMessages,
+	tryParseJSONObject,
+	validateRequest,
+	stripControlTokens,
+	estimateMessagesTokens,
+	estimateToolTokens
+} from "./utils";
+import {
+	SyntheticModelsService,
+	BASE_URL,
+	MAX_TOOLS,
+	DEFAULT_MODEL_DETAILS,
+	DEFAULT_CONTEXT_LENGTH,
+	DEFAULT_MAX_OUTPUT_TOKENS
+} from "./syntheticModels";
 
 export class SyntheticChatModelProvider implements LanguageModelChatProvider {
 	private _modelsService: SyntheticModelsService;

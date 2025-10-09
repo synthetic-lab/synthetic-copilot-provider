@@ -1,9 +1,23 @@
 import * as vscode from "vscode";
 import type { SyntheticModelItem, SyntheticModelsResponse, SyntheticModelDetails } from "./types";
 
-const BASE_URL = "https://api.synthetic.new/openai/v1";
-const DEFAULT_CONTEXT_LENGTH = 128000;
-const DEFAULT_MAX_OUTPUT_TOKENS = 16000;
+export const BASE_URL = "https://api.synthetic.new/openai/v1";
+export const DEFAULT_CONTEXT_LENGTH = 128000;
+export const DEFAULT_MAX_OUTPUT_TOKENS = 16000;
+export const MAX_TOOLS = 128;
+
+export const DEFAULT_MODEL_DETAILS = {
+	tooltip: "Synthetic",
+	family: "synthetic",
+	detail: "Synthetic.new",
+	version: "1.0.0",
+	maxInputTokens: DEFAULT_CONTEXT_LENGTH,
+	maxOutputTokens: DEFAULT_MAX_OUTPUT_TOKENS,
+	capabilities: {
+		toolCalling: false,
+		imageInput: false,
+	},
+} satisfies Partial<import("vscode").LanguageModelChatInformation>;
 
 /**
  * Service for handling model fetching and hydration from Synthetic API
@@ -34,6 +48,8 @@ export class SyntheticModelsService {
         }
         return apiKey;
     }
+
+
 
     /**
      * Fetch the list of models and supplementary metadata from Synthetic.
