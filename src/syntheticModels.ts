@@ -67,11 +67,17 @@ export class SyntheticModelsService {
 					},
 				});            if (!response.ok) {
                 const errorText = await response.text();
-                // console.error("[Synthetic Model Provider] Failed to fetch Synthetic models", {
-                //     status: response.status,
-                //     statusText: response.statusText,
-                //     detail: errorText,
-                // });
+                console.error("[Synthetic Model Provider] Failed to fetch Synthetic models", {
+                    status: response.status,
+                    statusText: response.statusText,
+                    detail: errorText,
+                });
+
+                // Emit user-friendly error message
+                vscode.window.showInformationMessage(
+                    `Failed to fetch models from Synthetic (${response.status}): ${response.statusText || 'Network error'}. Please check your API key and internet connection.`
+                );
+
                 throw new Error(
                     `Failed to fetch Synthetic models: ${response.status}${response.statusText ? ` ${response.statusText}` : ""}${errorText ? `\n${errorText}` : ""}`
                 );
@@ -84,6 +90,13 @@ export class SyntheticModelsService {
             try {
                 data = SyntheticModelsResponseSchema.parse(rawData); // This line validates!
             } catch (validationError) {
+                console.error("[Synthetic Model Provider] Model data validation failed:", validationError);
+
+                // Emit user-friendly error message
+                vscode.window.showInformationMessage(
+                    `Failed to parse model data from Synthetic API. The API response format may have changed. Please try again later.`
+                );
+
                 throw new Error(
                     `Invalid API response format from Synthetic: ${validationError instanceof Error ? validationError.message : 'Unknown validation error'}`
                 );
@@ -132,6 +145,9 @@ export class SyntheticModelsService {
 					} catch (err) {
 						attempt++;
 						if (attempt >= maxRetries) {
+							console.error("[Synthetic Model Provider] Failed to fetch model details after retries:", err);
+							// Note: We don't emit user messages here since this is a fallback operation
+							// and will be handled gracefully by returning null
 							throw err;
 						}
 						// Optionally add a delay before retrying
@@ -146,6 +162,11 @@ export class SyntheticModelsService {
 				try {
 					data = ModelDetailsApiResponseSchema.parse(rawData); // This line validates!
 				} catch (validationError) {
+					console.error("[Synthetic Model Provider] Model details validation failed:", validationError);
+
+					// Note: We don't emit user messages here since this is a fallback operation
+					// and the main error handling in prepareLanguageModelChatInformation will handle user notification
+
 					throw new Error(
 						`Invalid model details API response format: ${validationError instanceof Error ? validationError.message : 'Unknown validation error'}`
 					);
@@ -202,11 +223,27 @@ export class SyntheticModelsService {
 			return [];
 		}
 
-		const { models } = await this.fetchModels(apiKey);
+		let models;
+		try {
+			const result = await this.fetchModels(apiKey);
+			models = result.models;
+		} catch (error) {
+			console.error("[Synthetic Model Provider] Failed to prepare model information:", error);
 
-		const infos: LanguageModelChatInformation[] = await Promise.all(
-			models.map(async (m) => {
+			if (!options.silent) {
+				const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+				vscode.window.showInformationMessage(
+					`Unable to load Synthetic models: ${errorMessage}. Please check your API key and try again.`
+				);
+			}
 
+			return [];
+		}
+
+		const infos: LanguageModelChatInformation[] = [];
+
+		for (const m of models) {
+			try {
 				// Try to hydrate model information
 				const hydratedInfo = await this.hydrateModelId(m.id);
 
@@ -216,7 +253,7 @@ export class SyntheticModelsService {
 				const contextLen = modelInfo.maxInputTokens || DEFAULT_CONTEXT_LENGTH;
 				const maxOutput = modelInfo.maxOutputTokens || DEFAULT_MAX_OUTPUT_TOKENS;
 
-				return {
+				const modelInfo_final = {
 					id: m.id,
 					name: modelInfo.name || m.id,
 					tooltip: modelInfo.tooltip || "Synthetic",
@@ -230,8 +267,13 @@ export class SyntheticModelsService {
 						imageInput: modelInfo.capabilities?.imageInput || false,
 					},
 				} satisfies LanguageModelChatInformation;
-			})
-		);
+
+				infos.push(modelInfo_final);
+			} catch (error) {
+				console.error(`[Synthetic Model Provider] Failed to process model ${m.id}:`, error);
+				// Skip models that can't be processed - don't add them to the list
+			}
+		}
 
 		return infos;
 	}

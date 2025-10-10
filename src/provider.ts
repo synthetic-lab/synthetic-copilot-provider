@@ -114,6 +114,13 @@ export class SyntheticChatModelProvider implements LanguageModelChatProvider {
 			}
 		} catch (error) {
 			console.error("[Synthetic Model Provider] Error during chat completion:", error);
+
+			// Emit user-friendly error message
+			const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+			vscode.window.showInformationMessage(
+				`Failed to get completion from Synthetic: ${errorMessage}. Please check your API key and connection.`
+			);
+
 			throw error;
 		}
 	}

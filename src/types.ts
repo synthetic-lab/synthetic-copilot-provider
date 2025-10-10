@@ -41,13 +41,11 @@ export interface SyntheticModelDetails {
  * Response envelope for the router models listing.
  */
 export interface SyntheticModelsResponse {
-	object: string;
 	data: SyntheticModelItem[];
 }
 
 // Zod schema for validating the SyntheticModelsResponse
 export const SyntheticModelsResponseSchema = z.object({
-	object: z.string(),
 	data: z.array(z.object({
 		id: z.string(),
 		object: z.string(),

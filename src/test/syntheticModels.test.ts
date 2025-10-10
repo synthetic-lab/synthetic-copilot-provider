@@ -211,7 +211,6 @@ suite("Synthetic Models Service Tests", () => {
 
 	suite("Zod Validation Tests", () => {
 		const validApiResponse = {
-			"object": "list",
 			"data": [
 				{
 					"id": "hf:zai-org/GLM-4.6",
@@ -423,11 +422,15 @@ suite("Synthetic Models Service Tests", () => {
 			}
 		});
 
-		test("should reject API response with 'object' as non-string", async () => {
+		test("should reject API response with individual model 'object' as non-string", async () => {
 			const apiKey = "test-api-key";
 			const invalidResponse = {
-				"object": 123, // Should be string, not number
-				"data": []
+				"data": [
+					{
+						"id": "test-model",
+						"object": 123 // Should be string, not number
+					}
+				]
 			};
 
 			const originalFetch = global.fetch;
