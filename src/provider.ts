@@ -8,55 +8,17 @@ import {
 	LanguageModelResponsePart,
 	Progress,
 } from "vscode";
+import OpenAI from "openai";
 import {
-	convertTools,
-	convertMessages,
-	tryParseJSONObject,
-	validateRequest,
-	stripControlTokens,
-	estimateMessagesTokens,
-	estimateToolTokens
+	convertRequestToOpenAI
 } from "./utils";
 import {
 	SyntheticModelsService,
-	BASE_URL,
-	MAX_TOOLS,
-	DEFAULT_MODEL_DETAILS,
-	DEFAULT_CONTEXT_LENGTH,
-	DEFAULT_MAX_OUTPUT_TOKENS
+	BASE_URL
 } from "./syntheticModels";
 
 export class SyntheticChatModelProvider implements LanguageModelChatProvider {
 	private _modelsService: SyntheticModelsService;
-
-	/** Buffer for assembling streamed tool calls by index. */
-	private _toolCallBuffers: Map<number, { id?: string; name?: string; args: string }> = new Map<
-		number,
-		{ id?: string; name?: string; args: string }
-	>();
-
-	/** Indices for which a tool call has been fully emitted. */
-	private _completedToolCallIndices = new Set<number>();
-
-	/** Track if we emitted any assistant text before seeing tool calls (SSE-like begin-tool-calls hint). */
-	private _hasEmittedAssistantText = false;
-
-	/** Track if we emitted the begin-tool-calls whitespace flush. */
-	private _emittedBeginToolCallsHint = false;
-
-	// Lightweight tokenizer state for tool calls embedded in text
-	private _textToolParserBuffer = "";
-	private _textToolActive:
-		| undefined
-		| {
-			name?: string;
-			index?: number;
-			argBuffer: string;
-			emitted?: boolean;
-		};
-	private _emittedTextToolCallKeys = new Set<string>();
-	private _emittedTextToolCallIds = new Set<string>();
-
 	/**
 	 * Create a provider using the given secret storage for the API key.
 	 * @param secrets VS Code secret storage.
@@ -65,72 +27,11 @@ export class SyntheticChatModelProvider implements LanguageModelChatProvider {
 		this._modelsService = new SyntheticModelsService(userAgent);
 	}
 
-
-
-	/**
-	 * Get the list of available language models contributed by this provider
-	 * @param options Options which specify the calling context of this function
-	 * @param token A cancellation token which signals if the user cancelled the request or not
-	 * @returns A promise that resolves to the list of available language models
-	 */
-	async prepareLanguageModelChatInformation(
-		options: { silent: boolean },
-		_token: CancellationToken
-	): Promise<LanguageModelChatInformation[]> {
-		console.debug("[Synthetic Model Provider] prepareLanguageModelChatInformation invoked", {
-			silent: options.silent,
-		});
-		const apiKey = await this._modelsService.ensureApiKey(this.secrets, options.silent);
-		if (!apiKey) {
-			console.debug("[Synthetic Model Provider] No API key available, returning empty provider list");
-			return [];
-		}
-
-		const { models } = await this._modelsService.fetchModels(apiKey);
-		console.debug("[Synthetic Model Provider] Retrieved models", { count: models.length });
-
-		const infos: LanguageModelChatInformation[] = await Promise.all(
-			models.map(async (m) => {
-				console.debug("[Synthetic Model Provider] Preparing language model metadata", { modelId: m.id });
-
-				// Try to hydrate model information
-				const hydratedInfo = await this._modelsService.hydrateModelId(m.id);
-
-				// Use hydrated information if available, otherwise fall back to defaults
-				const modelInfo = { ...DEFAULT_MODEL_DETAILS, ...hydratedInfo };
-
-				const contextLen = modelInfo.maxInputTokens || DEFAULT_CONTEXT_LENGTH;
-				const maxOutput = modelInfo.maxOutputTokens || DEFAULT_MAX_OUTPUT_TOKENS;
-
-				return {
-					id: m.id,
-					name: modelInfo.name || m.id,
-					tooltip: modelInfo.tooltip || "Synthetic",
-					detail: modelInfo.detail || "Synthetic.new",
-					family: modelInfo.family || "synthetic",
-					version: modelInfo.version || "1.0.0",
-					maxInputTokens: contextLen,
-					maxOutputTokens: maxOutput,
-					capabilities: {
-						toolCalling: modelInfo.capabilities?.toolCalling || false,
-						imageInput: modelInfo.capabilities?.imageInput || false,
-					},
-				} satisfies LanguageModelChatInformation;
-			})
-		);
-
-		return infos;
-	}
-
 	async provideLanguageModelChatInformation(
 		options: { silent: boolean },
 		_token: CancellationToken
 	): Promise<LanguageModelChatInformation[]> {
-		console.debug("[Synthetic Model Provider] provideLanguageModelChatInformation invoked", {
-			silent: options.silent,
-		});
-		const info = await this.prepareLanguageModelChatInformation({ silent: options.silent ?? false }, _token);
-		console.debug("[Synthetic Model Provider] provideLanguageModelChatInformation completed: ", info);
+		const info = await this._modelsService.prepareLanguageModelChatInformation(this.secrets, { silent: options.silent ?? false }, _token);
 		return info;
 	}
 
@@ -146,140 +47,73 @@ export class SyntheticChatModelProvider implements LanguageModelChatProvider {
 	 */
 	async provideLanguageModelChatResponse(
 		model: LanguageModelChatInformation,
-		messages: readonly LanguageModelChatRequestMessage[],
+		messages: LanguageModelChatRequestMessage[],
 		options: ProvideLanguageModelChatResponseOptions,
 		progress: Progress<LanguageModelResponsePart>,
 		token: CancellationToken
 	): Promise<void> {
-		console.debug("[Synthetic Model Provider] provideLanguageModelChatResponse invoked", {
-			modelId: model.id,
-			messageCount: messages.length,
-			toolCount: options.tools?.length ?? 0,
-		});
 
-		this._toolCallBuffers.clear();
-		this._completedToolCallIndices.clear();
-		this._hasEmittedAssistantText = false;
-		this._emittedBeginToolCallsHint = false;
-		this._textToolParserBuffer = "";
-		this._textToolActive = undefined;
-		this._emittedTextToolCallKeys.clear();
-		this._emittedTextToolCallIds.clear();
+		const apiKey = await this._modelsService.ensureApiKey(this.secrets, true);
+		if (!apiKey) {
+			throw new Error("Synthetic API key not found");
+		}
 
-
-		let requestBody: Record<string, unknown> | undefined;
-		const trackingProgress: Progress<LanguageModelResponsePart> = {
-			report: (part) => {
-				console.debug("[Synthetic Model Provider] Reporting progress part", { partType: part.constructor?.name });
-				try {
-					progress.report(part);
-				} catch (e) {
-					console.error("[Synthetic Model Provider] Progress.report failed", {
-						modelId: model.id,
-						error: e instanceof Error ? { name: e.name, message: e.message } : String(e),
-					});
-				}
-			},
-		};
 		try {
-			const apiKey = await this._modelsService.ensureApiKey(this.secrets, true);
-			if (!apiKey) {
-				throw new Error("Synthetic API key not found");
-			}
-
-			console.debug("[Synthetic Model Provider] Obtained API key (hidden) for chat request");
-			const openaiMessages = convertMessages(messages);
-
-			console.debug("[Synthetic Model Provider] Converted messages", { count: openaiMessages.length });
-			validateRequest(messages);
-
-			console.debug("[Synthetic Model Provider] Request validated");
-			const toolConfig = convertTools(options);
-
-			console.debug("[Synthetic Model Provider] Tool configuration prepared", {
-				hasTools: Boolean(toolConfig.tools?.length),
-				hasChoice: Boolean(toolConfig.tool_choice),
+			const openAIRequest: OpenAI.ChatCompletionCreateParamsStreaming = {
+				...convertRequestToOpenAI(messages, options.tools as vscode.LanguageModelChatTool[]),
+				model: model.id
+			}; const openai = new OpenAI({
+				baseURL: BASE_URL,
+				apiKey: apiKey,
+				defaultHeaders: { 'User-Agent': this.userAgent }
 			});
-			if (options.tools && options.tools.length > MAX_TOOLS) {
-				throw new Error(`Cannot have more than ${MAX_TOOLS} tools per request.`);
-			}
 
-			const inputTokenCount = estimateMessagesTokens(messages);
-			const toolTokenCount = estimateToolTokens(toolConfig.tools);
-			const tokenLimit = Math.max(1, model.maxInputTokens);
-			if (inputTokenCount + toolTokenCount > tokenLimit) {
-				console.error("[Synthetic Model Provider] Message exceeds token limit", { total: inputTokenCount + toolTokenCount, tokenLimit });
-				console.debug("[Synthetic Model Provider] Token limit exceeded", { inputTokenCount, toolTokenCount, tokenLimit });
-				throw new Error("Message exceeds token limit.");
-			}
+			const stream = await openai.chat.completions.create(openAIRequest);
 
-			requestBody = {
-				model: model.id,
-				messages: openaiMessages,
-				stream: true,
-				max_tokens: Math.min(options.modelOptions?.max_tokens || 4096, model.maxOutputTokens),
-				temperature: options.modelOptions?.temperature ?? 0.7,
-			};
-
-			console.debug("[Synthetic Model Provider] Final request body computed", {
-				model: requestBody.model,
-				hasTools: Boolean((requestBody as Record<string, unknown>).tools),
-				maxTokens: requestBody.max_tokens,
-				temperature: requestBody.temperature,
-			});
-			// Allow-list model options
-			if (options.modelOptions) {
-				const mo = options.modelOptions as Record<string, unknown>;
-				if (typeof mo.stop === "string" || Array.isArray(mo.stop)) {
-					(requestBody as Record<string, unknown>).stop = mo.stop;
+			for await (const chunk of stream) {
+				if (token.isCancellationRequested) {
+					break;
 				}
-				if (typeof mo.frequency_penalty === "number") {
-					(requestBody as Record<string, unknown>).frequency_penalty = mo.frequency_penalty;
+				const choice = chunk.choices[0];
+				if (!choice) {
+					continue;
 				}
-				if (typeof mo.presence_penalty === "number") {
-					(requestBody as Record<string, unknown>).presence_penalty = mo.presence_penalty;
+				const delta = choice.delta;
+				// Handle text content
+				const content = delta?.content;
+				if (content) {
+					progress.report(new vscode.LanguageModelTextPart(content));
 				}
-				console.debug("[Synthetic Model Provider] Applied optional modelOptions", mo);
-			}
 
-			if (toolConfig.tools) {
-				(requestBody as Record<string, unknown>).tools = toolConfig.tools;
+				// Handle tool calls
+				const toolCalls = delta?.tool_calls;
+				if (toolCalls && toolCalls.length > 0) {
+					for (const toolCall of toolCalls) {
+						if (toolCall.id && toolCall.function?.name) {
+							// Parse function arguments if provided, otherwise use empty object
+							let input: object = {};
+							if (toolCall.function.arguments) {
+								try {
+									input = JSON.parse(toolCall.function.arguments);
+								} catch (error) {
+									console.warn("[Synthetic Model Provider] Failed to parse tool call arguments:", error);
+									// Use empty object if parsing fails
+									input = {};
+								}
+							}
+							const toolCallPart = new vscode.LanguageModelToolCallPart(
+								toolCall.id,
+								toolCall.function.name,
+								input
+							);
+							progress.report(toolCallPart);
+						}
+					}
+				}
 			}
-			if (toolConfig.tool_choice) {
-				(requestBody as Record<string, unknown>).tool_choice = toolConfig.tool_choice;
-			}
-			console.debug("[Synthetic Model Provider] Prepared headers for chat request");
-			const response = await fetch(`${BASE_URL}/chat/completions`, {
-				method: "POST",
-				headers: {
-					Authorization: `Bearer ${apiKey}`,
-					"Content-Type": "application/json",
-					"User-Agent": this.userAgent,
-				},
-				body: JSON.stringify(requestBody),
-			});
-
-			console.debug("[Synthetic Model Provider] Issued chat request, awaiting response");
-			if (!response.ok) {
-				const errorText = await response.text();
-				console.error("[Synthetic Model Provider] API error response", errorText);
-				throw new Error(
-					`Synthetic API error: ${response.status} ${response.statusText}${errorText ? `\n${errorText}` : ""}`
-				);
-			}
-			console.debug("[Synthetic Model Provider] Streaming response ready, beginning processing");
-			if (!response.body) {
-				throw new Error("No response body from Synthetic API");
-			}
-			console.debug("[Synthetic Model Provider] Starting streaming response processing");
-			await this.processStreamingResponse(response.body, trackingProgress, token);
-		} catch (err) {
-			console.error("[Synthetic Model Provider] Chat request failed", {
-				modelId: model.id,
-				messageCount: messages.length,
-				error: err instanceof Error ? { name: err.name, message: err.message } : String(err),
-			});
-			throw err;
+		} catch (error) {
+			console.error("[Synthetic Model Provider] Error during chat completion:", error);
+			throw error;
 		}
 	}
 
@@ -295,423 +129,6 @@ export class SyntheticChatModelProvider implements LanguageModelChatProvider {
 		text: string | LanguageModelChatRequestMessage,
 		_token: CancellationToken
 	): Promise<number> {
-		if (typeof text === "string") {
-			return Math.ceil(text.length / 4);
-		} else {
-			let totalTokens = 0;
-			for (const part of text.content) {
-				// Handle both old and new message types
-				if (part instanceof vscode.LanguageModelTextPart) {
-					totalTokens += Math.ceil((part as any).value.length / 4);
-				} else if (typeof part === 'object' && part !== null && 'value' in part && typeof (part as any).value === 'string') {
-					totalTokens += Math.ceil((part as any).value.length / 4);
-				}
-			}
-			return totalTokens;
-		}
+		return 44;
 	}
-
-
-
-	/**
-	 * Read and parse the streaming (SSE-like) response and report parts.
-	 * @param responseBody The readable stream body.
-	 * @param progress Progress reporter for streamed parts.
-	 * @param token Cancellation token.
-	 */
-	private async processStreamingResponse(
-		responseBody: ReadableStream<Uint8Array>,
-		progress: vscode.Progress<vscode.LanguageModelResponsePart>,
-		token: vscode.CancellationToken,
-	): Promise<void> {
-		const reader = responseBody.getReader();
-		const decoder = new TextDecoder();
-		let buffer = "";
-
-		try {
-			console.debug("[Synthetic Model Provider] processStreamingResponse loop start");
-			while (!token.isCancellationRequested) {
-				const { done, value } = await reader.read();
-				if (done) { break; }
-
-				buffer += decoder.decode(value, { stream: true });
-				console.debug("[Synthetic Model Provider] Decoded chunk", { bufferLength: buffer.length });
-				const lines = buffer.split("\n");
-				buffer = lines.pop() || "";
-
-				for (const line of lines) {
-					if (!line.startsWith("data: ")) {
-						console.debug("[Synthetic Model Provider] Skipping non-data line", { line });
-						continue;
-					}
-					const data = line.slice(6);
-					if (data === "[DONE]") {
-						console.debug("[Synthetic Model Provider] Received [DONE]");
-						// Do not throw on [DONE]; any incomplete/empty buffers are ignored.
-						await this.flushToolCallBuffers(progress, /*throwOnInvalid*/ false);
-						// Flush any in-progress text-embedded tool call (silent if incomplete)
-						await this.flushActiveTextToolCall(progress);
-						continue;
-					}
-
-					try {
-						console.debug("[Synthetic Model Provider] Processing delta line");
-						const parsed = JSON.parse(data);
-						await this.processDelta(parsed, progress);
-					} catch {
-						// Silently ignore malformed SSE lines temporarily
-					}
-				}
-			}
-		} finally {
-			reader.releaseLock();
-			// Clean up any leftover tool call state
-			this._toolCallBuffers.clear();
-			this._completedToolCallIndices.clear();
-			this._hasEmittedAssistantText = false;
-			this._emittedBeginToolCallsHint = false;
-			this._textToolParserBuffer = "";
-			this._textToolActive = undefined;
-			this._emittedTextToolCallKeys.clear();
-		}
-	}
-
-	/**
-	 * Handle a single streamed delta chunk, emitting text and tool call parts.
-	 * @param delta Parsed SSE chunk from the Router.
-	 * @param progress Progress reporter for parts.
-	 */
-	private async processDelta(
-		delta: Record<string, unknown>,
-		progress: vscode.Progress<vscode.LanguageModelResponsePart>,
-	): Promise<boolean> {
-		let emitted = false;
-		const choice = (delta.choices as Record<string, unknown>[] | undefined)?.[0];
-		if (!choice) { return false; }
-
-		const deltaObj = choice.delta as Record<string, unknown> | undefined;
-
-		// report thinking progress if backend provides it and host supports it
-		try {
-			const maybeThinking = (choice as Record<string, unknown> | undefined)?.thinking ?? (deltaObj as Record<string, unknown> | undefined)?.thinking;
-			if (maybeThinking !== undefined) {
-				const vsAny = (vscode as unknown as Record<string, unknown>);
-				const ThinkingCtor = vsAny["LanguageModelThinkingPart"] as
-					| (new (text: string, id?: string, metadata?: unknown) => unknown)
-					| undefined;
-				if (ThinkingCtor) {
-					let text = "";
-					let id: string | undefined;
-					let metadata: unknown;
-					if (maybeThinking && typeof maybeThinking === "object") {
-						const mt = maybeThinking as Record<string, unknown>;
-						text = typeof mt["text"] === "string" ? (mt["text"] as string) : "";
-						id = typeof mt["id"] === "string" ? (mt["id"] as string) : undefined;
-						metadata = mt["metadata"];
-					} else if (typeof maybeThinking === "string") {
-						text = maybeThinking;
-					}
-					if (text) {
-						progress.report(new (ThinkingCtor as new (text: string, id?: string, metadata?: unknown) => unknown)(text, id, metadata) as unknown as vscode.LanguageModelResponsePart);
-						emitted = true;
-					}
-				}
-			}
-		} catch {
-			// ignore errors here temporarily
-		}
-		if (deltaObj?.content) {
-			const content = String(deltaObj.content);
-			const res = this.processTextContent(content, progress);
-			if (res.emittedText) {
-				this._hasEmittedAssistantText = true;
-			}
-			if (res.emittedAny) {
-				emitted = true;
-			}
-		}
-
-		if (deltaObj?.tool_calls) {
-			const toolCalls = deltaObj.tool_calls as Array<Record<string, unknown>>;
-
-			// SSEProcessor-like: if first tool call appears after text, emit a whitespace
-			// to ensure any UI buffers/linkifiers are flushed without adding visible noise.
-			if (!this._emittedBeginToolCallsHint && this._hasEmittedAssistantText && toolCalls.length > 0) {
-				progress.report(new vscode.LanguageModelTextPart(" "));
-				this._emittedBeginToolCallsHint = true;
-			}
-
-			for (const tc of toolCalls) {
-				const idx = (tc.index as number) ?? 0;
-				// Ignore any further deltas for an index we've already completed
-				if (this._completedToolCallIndices.has(idx)) {
-					continue;
-				}
-				const buf = this._toolCallBuffers.get(idx) ?? { args: "" };
-				if (tc.id && typeof tc.id === "string") {
-					buf.id = tc.id as string;
-				}
-				const func = tc.function as Record<string, unknown> | undefined;
-				if (func?.name && typeof func.name === "string") {
-					buf.name = func.name as string;
-				}
-				if (typeof func?.arguments === "string") {
-					buf.args += func.arguments as string;
-				}
-				this._toolCallBuffers.set(idx, buf);
-
-				// Emit immediately once arguments become valid JSON to avoid perceived hanging
-				await this.tryEmitBufferedToolCall(idx, progress);
-			}
-		}
-
-		const finish = (choice.finish_reason as string | undefined) ?? undefined;
-		if (finish === "tool_calls" || finish === "stop") {
-			// On both 'tool_calls' and 'stop', emit any buffered calls and throw on invalid JSON
-			await this.flushToolCallBuffers(progress, /*throwOnInvalid*/ true);
-		}
-		return emitted;
-	}
-
-	/**
-	 * Process streamed text content for inline tool-call control tokens and emit text/tool calls.
-	 * Returns which parts were emitted for logging/flow control.
-	 */
-	private processTextContent(
-		input: string,
-		progress: vscode.Progress<vscode.LanguageModelResponsePart>,
-	): { emittedText: boolean; emittedAny: boolean } {
-		const BEGIN = "<|tool_call_begin|>";
-		const ARG_BEGIN = "<|tool_call_argument_begin|>";
-		const END = "<|tool_call_end|>";
-
-		let data = this._textToolParserBuffer + input;
-		let emittedText = false;
-		let emittedAny = false;
-		let visibleOut = "";
-
-		while (data.length > 0) {
-			if (!this._textToolActive) {
-				const b = data.indexOf(BEGIN);
-				if (b === -1) {
-					// No tool-call start: emit visible portion, but keep any partial BEGIN prefix as buffer
-					const longestPartialPrefix = ((): number => {
-						for (let k = Math.min(BEGIN.length - 1, data.length - 1); k > 0; k--) {
-							if (data.endsWith(BEGIN.slice(0, k))) { return k; }
-						}
-						return 0;
-					})();
-					if (longestPartialPrefix > 0) {
-						const visible = data.slice(0, data.length - longestPartialPrefix);
-						if (visible) { visibleOut += stripControlTokens(visible); }
-						this._textToolParserBuffer = data.slice(data.length - longestPartialPrefix);
-						data = "";
-						break;
-					} else {
-						// All visible, clean other control tokens
-						visibleOut += stripControlTokens(data);
-						data = "";
-						break;
-					}
-				}
-				// Emit text before the token
-				const pre = data.slice(0, b);
-				if (pre) {
-							visibleOut += stripControlTokens(pre);
-				}
-				// Advance past BEGIN
-				data = data.slice(b + BEGIN.length);
-
-				// Find the delimiter that ends the name/index segment
-				const a = data.indexOf(ARG_BEGIN);
-				const e = data.indexOf(END);
-				let delimIdx = -1;
-				let delimKind: "arg" | "end" | undefined = undefined;
-				if (a !== -1 && (e === -1 || a < e)) { delimIdx = a; delimKind = "arg"; }
-				else if (e !== -1) { delimIdx = e; delimKind = "end"; }
-				else {
-					// Incomplete header; keep for next chunk (re-add BEGIN so we don't lose it)
-					this._textToolParserBuffer = BEGIN + data;
-					data = "";
-					break;
-				}
-
-				const header = data.slice(0, delimIdx).trim();
-				const m = header.match(/^([A-Za-z0-9_\-.]+)(?::(\d+))?/);
-				const name = m?.[1] ?? undefined;
-				const index = m?.[2] ? Number(m?.[2]) : undefined;
-				this._textToolActive = { name, index, argBuffer: "", emitted: false };
-				// Advance past delimiter token
-				if (delimKind === "arg") {
-					data = data.slice(delimIdx + ARG_BEGIN.length);
-				} else /* end */ {
-					// No args, finalize immediately
-					data = data.slice(delimIdx + END.length);
-					const did = this.emitTextToolCallIfValid(progress, this._textToolActive, "{}");
-					if (did) {
-						this._textToolActive.emitted = true;
-						emittedAny = true;
-					}
-					this._textToolActive = undefined;
-				}
-				continue;
-			}
-
-			// We are inside arguments, collect until END and emit as soon as JSON becomes valid
-			const e2 = data.indexOf(END);
-			if (e2 === -1) {
-				// No end marker yet, accumulate and check for early valid JSON
-				this._textToolActive.argBuffer += data;
-				// Early emit when JSON becomes valid and we haven't emitted yet
-				if (!this._textToolActive.emitted) {
-					const did = this.emitTextToolCallIfValid(progress, this._textToolActive, this._textToolActive.argBuffer);
-					if (did) {
-						this._textToolActive.emitted = true;
-						emittedAny = true;
-					}
-				}
-				data = "";
-				break;
-			} else {
-				this._textToolActive.argBuffer += data.slice(0, e2);
-				// Consume END
-				data = data.slice(e2 + END.length);
-				// Final attempt to emit if not already
-				if (!this._textToolActive.emitted) {
-					const did = this.emitTextToolCallIfValid(progress, this._textToolActive, this._textToolActive.argBuffer);
-					if (did) {
-						emittedAny = true;
-					}
-				}
-				this._textToolActive = undefined;
-				continue;
-			}
-		}
-
-		// Emit any visible text
-		const textToEmit = visibleOut;
-		if (textToEmit && textToEmit.length > 0) {
-			progress.report(new vscode.LanguageModelTextPart(textToEmit));
-			emittedText = true;
-			emittedAny = true;
-		}
-
-		// Store leftover for next chunk
-		this._textToolParserBuffer = data;
-
-		return { emittedText, emittedAny };
-	}
-
-	private emitTextToolCallIfValid(
-		progress: vscode.Progress<vscode.LanguageModelResponsePart>,
-		call: { name?: string; index?: number; argBuffer: string; emitted?: boolean },
-		argText: string,
-	): boolean {
-		const name = call.name ?? "unknown_tool";
-		const parsed = tryParseJSONObject(argText);
-		if (!parsed.ok) {
-			return false;
-		}
-		const canonical = JSON.stringify(parsed.value);
-		const key = `${name}:${canonical}`;
-		// identity-based dedupe when index is present
-		if (typeof call.index === "number") {
-			const idKey = `${name}:${call.index}`;
-			if (this._emittedTextToolCallIds.has(idKey)) {
-				return false;
-			}
-			// Mark identity as emitted
-			this._emittedTextToolCallIds.add(idKey);
-		} else if (this._emittedTextToolCallKeys.has(key)) {
-			return false;
-		}
-		this._emittedTextToolCallKeys.add(key);
-		const id = `tct_${Math.random().toString(36).slice(2, 10)}`;
-		progress.report(new vscode.LanguageModelToolCallPart(id, name, parsed.value));
-		return true;
-	}
-
-	private async flushActiveTextToolCall(
-		progress: vscode.Progress<vscode.LanguageModelResponsePart>,
-	): Promise<void> {
-		if (!this._textToolActive) {
-			return;
-		}
-		const argText = this._textToolActive.argBuffer;
-		const parsed = tryParseJSONObject(argText);
-		if (!parsed.ok) {
-			return;
-		}
-		// Emit (dedupe ensures we don't double-emit)
-		this.emitTextToolCallIfValid(progress, this._textToolActive, argText);
-		this._textToolActive = undefined;
-	}
-
-	/**
-	 * Try to emit a buffered tool call when a valid name and JSON arguments are available.
-	 * @param index The tool call index from the stream.
-	 * @param progress Progress reporter for parts.
-	 */
-	private async tryEmitBufferedToolCall(
-		index: number,
-		progress: vscode.Progress<vscode.LanguageModelResponsePart>
-	): Promise<void> {
-		const buf = this._toolCallBuffers.get(index);
-		if (!buf) {
-			return;
-		}
-		if (!buf.name) {
-			return;
-		}
-		const canParse = tryParseJSONObject(buf.args);
-		if (!canParse.ok) {
-			return;
-		}
-		const id = buf.id ?? `call_${Math.random().toString(36).slice(2, 10)}`;
-		const parameters = canParse.value;
-		try {
-			const canonical = JSON.stringify(parameters);
-			this._emittedTextToolCallKeys.add(`${buf.name}:${canonical}`);
-		} catch { /* ignore */ }
-		progress.report(new vscode.LanguageModelToolCallPart(id, buf.name, parameters));
-		this._toolCallBuffers.delete(index);
-		this._completedToolCallIndices.add(index);
-	}
-
-	/**
-	 * Flush all buffered tool calls, optionally throwing if arguments are not valid JSON.
-	 * @param progress Progress reporter for parts.
-	 * @param throwOnInvalid If true, throw when a tool call has invalid JSON args.
-	 */
-	private async flushToolCallBuffers(
-		progress: vscode.Progress<vscode.LanguageModelResponsePart>,
-		throwOnInvalid: boolean,
-	): Promise<void> {
-		if (this._toolCallBuffers.size === 0) {
-			return;
-		}
-		for (const [idx, buf] of Array.from(this._toolCallBuffers.entries())) {
-			const parsed = tryParseJSONObject(buf.args);
-			if (!parsed.ok) {
-				if (throwOnInvalid) {
-					console.error("[Synthetic Model Provider] Invalid JSON for tool call", { idx, snippet: (buf.args || "").slice(0, 200) });
-					throw new Error("Invalid JSON for tool call");
-				}
-				// When not throwing (e.g. on [DONE]), drop silently to reduce noise
-				continue;
-			}
-			const id = buf.id ?? `call_${Math.random().toString(36).slice(2, 10)}`;
-			const name = buf.name ?? "unknown_tool";
-			try {
-				const canonical = JSON.stringify(parsed.value);
-				this._emittedTextToolCallKeys.add(`${name}:${canonical}`);
-			} catch { /* ignore */ }
-			progress.report(new vscode.LanguageModelToolCallPart(id, name, parsed.value));
-			this._toolCallBuffers.delete(idx);
-			this._completedToolCallIndices.add(idx);
-		}
-	}
-
-
-
 }

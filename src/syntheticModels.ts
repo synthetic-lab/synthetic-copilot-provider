@@ -1,7 +1,8 @@
 import * as vscode from "vscode";
 import type { SyntheticModelItem, SyntheticModelsResponse, SyntheticModelDetails } from "./types";
+import { CancellationToken, LanguageModelChatInformation } from "vscode";
 
-export const BASE_URL = "https://api.synthetic.new/openai/v1";
+export const BASE_URL = "http://127.0.0.1:9091/openai/v1";
 export const DEFAULT_CONTEXT_LENGTH = 128000;
 export const DEFAULT_MAX_OUTPUT_TOKENS = 16000;
 export const MAX_TOOLS = 128;
@@ -56,16 +57,16 @@ export class SyntheticModelsService {
      * @param apiKey The Synthetic API key used to authenticate.
      */
     async fetchModels(apiKey: string): Promise<{ models: SyntheticModelItem[] }> {
-        console.debug("[Synthetic Model Provider] fetchModels called with apiKey:", apiKey);
-        try {
-            const response = await fetch(`${BASE_URL}/models`, {
-                headers: {
-                    Authorization: `Bearer ${apiKey}`,
-                    "User-Agent": this.userAgent,
-                },
-            });
-
-            if (!response.ok) {
+			try {
+				const response = await fetch(`${BASE_URL}/models`, {
+					headers: {
+						Authorization: `Bearer ${apiKey}`,
+						"User-Agent": this.userAgent,
+					},
+					// Always allow untrusted certificates
+					// @ts-ignore - agent property may not be in standard fetch types
+					agent: new (require('https')).Agent({ rejectUnauthorized: false })
+				});            if (!response.ok) {
                 const errorText = await response.text();
                 console.error("[Synthetic Model Provider] Failed to fetch Synthetic models", {
                     status: response.status,
@@ -79,7 +80,6 @@ export class SyntheticModelsService {
 
             const data = await response.json() as SyntheticModelsResponse;
             const models = data?.data ?? [];
-            console.debug("[Synthetic Model Provider] fetchModels succeeded", { count: models.length });
             return { models };
         } catch (error) {
             if (error instanceof Error) {
@@ -87,83 +87,133 @@ export class SyntheticModelsService {
                 throw error;
             }
             console.error("[Synthetic Model Provider] Failed to fetch Synthetic models", error);
-            console.debug("[Synthetic Model Provider] fetchModels throwing error");
             throw error;
         }
     }
 
-    /**
-     * Hydrate model information using the model details from https://models.dev/api.json
-     * @param modelId The model ID to hydrate
-     * @returns The hydrated model information or null if not found or tool_call is false
-     */
-    async hydrateModelId(modelId: string): Promise<Partial<import("vscode").LanguageModelChatInformation> | null> {
-        try {
-            if (!this._modelDetailsCache) {
-                let response;
-                const maxRetries = 3;
-                let attempt = 0;
-                while (attempt < maxRetries) {
-                    try {
-                        const controller = new AbortController();
-                        const timeoutId = setTimeout(() => controller.abort(), 5000);
+	/**
+	 * Hydrate model information using the model details from https://models.dev/api.json
+	 * @param modelId The model ID to hydrate
+	 * @returns The hydrated model information or null if not found or tool_call is false
+	 */
+	async hydrateModelId(modelId: string): Promise<Partial<import("vscode").LanguageModelChatInformation> | null> {
+		try {
+			if (!this._modelDetailsCache) {
+				let response;
+				const maxRetries = 3;
+				let attempt = 0;
+				while (attempt < maxRetries) {
+					try {
+						const controller = new AbortController();
+						const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-                        response = await fetch('https://models.dev/api.json', {
-                            signal: controller.signal,
-                        });
+						response = await fetch('https://models.dev/api.json', {
+							signal: controller.signal,
+						});
 
-                        clearTimeout(timeoutId);
+						clearTimeout(timeoutId);
 
-                        if (!response.ok) {
-                            throw new Error(`HTTP error! status: ${response.status}`);
-                        }
+						if (!response.ok) {
+							throw new Error(`HTTP error! status: ${response.status}`);
+						}
 
-                        break;
-                    } catch (err) {
-                        attempt++;
-                        if (attempt >= maxRetries) {
-                            throw err;
-                        }
-                        // Optionally add a delay before retrying
-                        await new Promise(res => setTimeout(res, 500 * attempt));
-                    }
-                }
-                const data = await response!.json() as { synthetic: { models: Record<string, SyntheticModelDetails> } };
-                this._modelDetailsCache = data.synthetic.models;
-            }
-            const modelDetails = this._modelDetailsCache![modelId];
+						break;
+					} catch (err) {
+						attempt++;
+						if (attempt >= maxRetries) {
+							throw err;
+						}
+						// Optionally add a delay before retrying
+						await new Promise(res => setTimeout(res, 500 * attempt));
+					}
+				}
+				const data = await response!.json() as { synthetic: { models: Record<string, SyntheticModelDetails> } };
+				this._modelDetailsCache = data.synthetic.models;
+			}
+			const modelDetails = this._modelDetailsCache![modelId];
 
-            if (!modelDetails) {
-                console.debug('[Synthetic Model Provider] Model details not found for model ID', modelId);
-                return null;
-            }
+			if (!modelDetails) {
+				console.warn('[Synthetic Model Provider] Model details not found for model ID', modelId);
+				return null;
+			}
 
-            // Filter out models where tool_call is false
-            if (!modelDetails.tool_call) {
-                console.debug('[Synthetic Model Provider] Model does not support tool calling, skipping', modelId);
-                return null;
-            }
+			// Filter out models where tool_call is false
+			if (!modelDetails.tool_call) {
+				console.warn('[Synthetic Model Provider] Model does not support tool calling, skipping', modelId);
+				return null;
+			}
 
-            console.debug('[Synthetic Model Provider] Hydrating model details for model ID', modelId);
 
-            // Map model details to LanguageModelChatInformation properties
-            const hydratedInfo: Partial<import("vscode").LanguageModelChatInformation> = {
-                name: modelDetails.name,
-                tooltip: modelDetails.name,
-                family: "synthetic",
-                version: "1.0.0",
-                maxInputTokens: modelDetails.limit?.context || DEFAULT_CONTEXT_LENGTH,
-                maxOutputTokens: modelDetails.limit?.output || DEFAULT_MAX_OUTPUT_TOKENS,
-                capabilities: {
-                    toolCalling: modelDetails.tool_call || false,
-                    imageInput: modelDetails.modalities?.input?.includes('image') || false,
-                },
-            };
+			// Map model details to LanguageModelChatInformation properties
+			const hydratedInfo: Partial<import("vscode").LanguageModelChatInformation> = {
+				name: modelDetails.name,
+				tooltip: modelDetails.name,
+				family: "synthetic",
+				version: "1.0.0",
+				maxInputTokens: modelDetails.limit?.context || DEFAULT_CONTEXT_LENGTH,
+				maxOutputTokens: modelDetails.limit?.output || DEFAULT_MAX_OUTPUT_TOKENS,
+				capabilities: {
+					toolCalling: modelDetails.tool_call || false,
+					imageInput: modelDetails.modalities?.input?.includes('image') || false,
+				},
+			};
 
-            return hydratedInfo;
-        } catch (error) {
-            console.error('[Synthetic Model Provider] Failed to load model details', error);
-            return null;
-        }
-    }
+			return hydratedInfo;
+		} catch (error) {
+			console.error('[Synthetic Model Provider] Failed to load model details', error);
+			return null;
+		}
+	}
+
+	/**
+	 * Get the list of available language models contributed by this provider
+	 * @param secrets VS Code secret storage
+	 * @param options Options which specify the calling context of this function
+	 * @param token A cancellation token which signals if the user cancelled the request or not
+	 * @returns A promise that resolves to the list of available language models
+	 */
+	async prepareLanguageModelChatInformation(
+		secrets: vscode.SecretStorage,
+		options: { silent: boolean },
+		_token: CancellationToken
+	): Promise<LanguageModelChatInformation[]> {
+		const apiKey = await this.ensureApiKey(secrets, options.silent);
+		if (!apiKey) {
+			console.error("[Synthetic Model Provider] No API key available, returning empty provider list");
+			return [];
+		}
+
+		const { models } = await this.fetchModels(apiKey);
+
+		const infos: LanguageModelChatInformation[] = await Promise.all(
+			models.map(async (m) => {
+
+				// Try to hydrate model information
+				const hydratedInfo = await this.hydrateModelId(m.id);
+
+				// Use hydrated information if available, otherwise fall back to defaults
+				const modelInfo = { ...DEFAULT_MODEL_DETAILS, ...hydratedInfo };
+
+				const contextLen = modelInfo.maxInputTokens || DEFAULT_CONTEXT_LENGTH;
+				const maxOutput = modelInfo.maxOutputTokens || DEFAULT_MAX_OUTPUT_TOKENS;
+
+				return {
+					id: m.id,
+					name: modelInfo.name || m.id,
+					tooltip: modelInfo.tooltip || "Synthetic",
+					detail: modelInfo.detail || "Synthetic.new",
+					family: modelInfo.family || "synthetic",
+					version: modelInfo.version || "1.0.0",
+					maxInputTokens: contextLen,
+					maxOutputTokens: maxOutput,
+					capabilities: {
+						toolCalling: modelInfo.capabilities?.toolCalling || false,
+						imageInput: modelInfo.capabilities?.imageInput || false,
+					},
+				} satisfies LanguageModelChatInformation;
+			})
+		);
+
+		return infos;
+	}
 }
