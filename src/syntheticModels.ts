@@ -1,8 +1,10 @@
 import * as vscode from "vscode";
-import type { SyntheticModelItem, SyntheticModelsResponse, SyntheticModelDetails } from "./types";
+import type { SyntheticModelItem, SyntheticModelsResponse, SyntheticModelDetails, ValidatedSyntheticModelsResponse, ValidatedModelDetailsApiResponse } from "./types";
+import { SyntheticModelsResponseSchema, ModelDetailsApiResponseSchema } from "./types";
 import { CancellationToken, LanguageModelChatInformation } from "vscode";
+import { z } from "zod";
 
-export const BASE_URL = "http://127.0.0.1:9091/openai/v1";
+export const BASE_URL = "https://api.synthetic.new/openai/v1";
 export const DEFAULT_CONTEXT_LENGTH = 128000;
 export const DEFAULT_MAX_OUTPUT_TOKENS = 16000;
 export const MAX_TOOLS = 128;
@@ -63,30 +65,39 @@ export class SyntheticModelsService {
 						Authorization: `Bearer ${apiKey}`,
 						"User-Agent": this.userAgent,
 					},
-					// Always allow untrusted certificates
-					// @ts-ignore - agent property may not be in standard fetch types
-					agent: new (require('https')).Agent({ rejectUnauthorized: false })
 				});            if (!response.ok) {
                 const errorText = await response.text();
-                console.error("[Synthetic Model Provider] Failed to fetch Synthetic models", {
-                    status: response.status,
-                    statusText: response.statusText,
-                    detail: errorText,
-                });
+                // console.error("[Synthetic Model Provider] Failed to fetch Synthetic models", {
+                //     status: response.status,
+                //     statusText: response.statusText,
+                //     detail: errorText,
+                // });
                 throw new Error(
                     `Failed to fetch Synthetic models: ${response.status}${response.statusText ? ` ${response.statusText}` : ""}${errorText ? `\n${errorText}` : ""}`
                 );
             }
 
-            const data = await response.json() as SyntheticModelsResponse;
-            const models = data?.data ?? [];
+            // Fetch and PARSE the data using the schema
+            const rawData = await response.json();
+            let data: ValidatedSyntheticModelsResponse;
+
+            try {
+                data = SyntheticModelsResponseSchema.parse(rawData); // This line validates!
+            } catch (validationError) {
+                throw new Error(
+                    `Invalid API response format from Synthetic: ${validationError instanceof Error ? validationError.message : 'Unknown validation error'}`
+                );
+            }
+
+            const models = data?.data;
+            if (!models || models.length === 0) {
+                throw new Error("No models data found in validated API response");
+            }
             return { models };
         } catch (error) {
             if (error instanceof Error) {
-                console.error("[Synthetic Model Provider] Failed to fetch Synthetic models", error);
                 throw error;
             }
-            console.error("[Synthetic Model Provider] Failed to fetch Synthetic models", error);
             throw error;
         }
     }
@@ -127,19 +138,29 @@ export class SyntheticModelsService {
 						await new Promise(res => setTimeout(res, 500 * attempt));
 					}
 				}
-				const data = await response!.json() as { synthetic: { models: Record<string, SyntheticModelDetails> } };
+
+				// Fetch and PARSE the data using the schema
+				const rawData = await response!.json();
+				let data: ValidatedModelDetailsApiResponse;
+
+				try {
+					data = ModelDetailsApiResponseSchema.parse(rawData); // This line validates!
+				} catch (validationError) {
+					throw new Error(
+						`Invalid model details API response format: ${validationError instanceof Error ? validationError.message : 'Unknown validation error'}`
+					);
+				}
+
 				this._modelDetailsCache = data.synthetic.models;
 			}
 			const modelDetails = this._modelDetailsCache![modelId];
 
 			if (!modelDetails) {
-				console.warn('[Synthetic Model Provider] Model details not found for model ID', modelId);
 				return null;
 			}
 
 			// Filter out models where tool_call is false
 			if (!modelDetails.tool_call) {
-				console.warn('[Synthetic Model Provider] Model does not support tool calling, skipping', modelId);
 				return null;
 			}
 
@@ -160,7 +181,6 @@ export class SyntheticModelsService {
 
 			return hydratedInfo;
 		} catch (error) {
-			console.error('[Synthetic Model Provider] Failed to load model details', error);
 			return null;
 		}
 	}
@@ -179,7 +199,6 @@ export class SyntheticModelsService {
 	): Promise<LanguageModelChatInformation[]> {
 		const apiKey = await this.ensureApiKey(secrets, options.silent);
 		if (!apiKey) {
-			console.error("[Synthetic Model Provider] No API key available, returning empty provider list");
 			return [];
 		}
 

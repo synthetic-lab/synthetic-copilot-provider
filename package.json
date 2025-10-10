@@ -64,6 +64,7 @@
 	},
 	"dependencies": {
 		"openai": "^6.2.0",
-		"tiktoken": "^1.0.22"
+		"tiktoken": "^1.0.22",
+		"zod": "^4.1.12"
 	}
 }

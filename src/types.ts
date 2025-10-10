@@ -1,5 +1,8 @@
 
 
+import * as vscode from "vscode";
+import { z } from "zod";
+
 export interface SyntheticModelItem {
 	id: string;
 	object: string;
@@ -27,7 +30,7 @@ export interface SyntheticModelDetails {
 		input: number;
 		output: number;
 	};
-	limit: {
+	limit?: {
 		context: number;
 		output: number;
 	};
@@ -41,3 +44,48 @@ export interface SyntheticModelsResponse {
 	object: string;
 	data: SyntheticModelItem[];
 }
+
+// Zod schema for validating the SyntheticModelsResponse
+export const SyntheticModelsResponseSchema = z.object({
+	object: z.string(),
+	data: z.array(z.object({
+		id: z.string(),
+		object: z.string(),
+	})),
+});
+
+// Infer the TypeScript type directly from the schema
+export type ValidatedSyntheticModelsResponse = z.infer<typeof SyntheticModelsResponseSchema>;
+
+// Zod schema for validating the model details API response
+export const ModelDetailsApiResponseSchema = z.object({
+	synthetic: z.object({
+		models: z.record(z.string(), z.object({
+			id: z.string(),
+			name: z.string(),
+			attachment: z.boolean(),
+			reasoning: z.boolean(),
+			temperature: z.boolean(),
+			tool_call: z.boolean(),
+			knowledge: z.string().optional(),
+			release_date: z.string().optional(),
+			last_updated: z.string().optional(),
+			modalities: z.object({
+				input: z.array(z.string()),
+				output: z.array(z.string()),
+			}),
+			open_weights: z.boolean(),
+			cost: z.object({
+				input: z.number(),
+				output: z.number(),
+			}),
+			limit: z.object({
+				context: z.number(),
+				output: z.number(),
+			}).optional(),
+		})),
+	}),
+});
+
+// Infer the TypeScript type directly from the schema
+export type ValidatedModelDetailsApiResponse = z.infer<typeof ModelDetailsApiResponseSchema>;
