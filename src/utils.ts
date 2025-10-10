@@ -1,23 +1,37 @@
-import * as vscode from "vscode";
-import OpenAI from 'openai';
 
+import OpenAI from 'openai';
+import { get_encoding } from "tiktoken";
+import {
+	CancellationToken,
+	LanguageModelChatInformation,
+	LanguageModelChatProvider,
+	LanguageModelChatRequestMessage,
+	LanguageModelChatTool,
+	ProvideLanguageModelChatResponseOptions,
+	LanguageModelToolCallPart,
+	LanguageModelTextPart,
+	LanguageModelChatMessageRole,
+	LanguageModelResponsePart,
+	LanguageModelToolResultPart,
+	Progress,
+} from "vscode";
 /**
  * Convert an array of VS Code LanguageModelChatRequestMessage to a single OpenAI ChatCompletionCreateParamsStreaming
  * @param messages Array of VS Code chat messages to convert
  * @param tools Optional array of tool definitions to include in the request
  * @returns OpenAI ChatCompletionCreateParamsStreaming object with all messages collapsed into one conversation
  */
-export function convertRequestToOpenAI(messages: vscode.LanguageModelChatRequestMessage[], tools?: vscode.LanguageModelChatTool[]): OpenAI.ChatCompletionCreateParamsStreaming {
+export function convertRequestToOpenAI(messages: LanguageModelChatRequestMessage[], tools?: LanguageModelChatTool[]): OpenAI.ChatCompletionCreateParamsStreaming {
 	const openaiMessages: OpenAI.ChatCompletionMessageParam[] = [];
 
 	for (const message of messages) {
 		// Convert role
 		let openaiRole: 'system' | 'user' | 'assistant' | 'tool';
 		switch (message.role) {
-			case vscode.LanguageModelChatMessageRole.User:
+			case LanguageModelChatMessageRole.User:
 				openaiRole = 'user';
 				break;
-			case vscode.LanguageModelChatMessageRole.Assistant:
+			case LanguageModelChatMessageRole.Assistant:
 				openaiRole = 'assistant';
 				break;
 			default:
@@ -31,9 +45,9 @@ export function convertRequestToOpenAI(messages: vscode.LanguageModelChatRequest
 		let toolResult: string | undefined;
 
 		for (const part of message.content) {
-			if (part instanceof vscode.LanguageModelTextPart) {
+			if (part instanceof LanguageModelTextPart) {
 				contentParts.push(part.value);
-			} else if (part instanceof vscode.LanguageModelToolCallPart) {
+			} else if (part instanceof LanguageModelToolCallPart) {
 				// Convert tool call parts
 				toolCalls.push({
 					id: part.callId,
@@ -43,11 +57,11 @@ export function convertRequestToOpenAI(messages: vscode.LanguageModelChatRequest
 						arguments: JSON.stringify(part.input)
 					}
 				});
-			} else if (part instanceof vscode.LanguageModelToolResultPart) {
+			} else if (part instanceof LanguageModelToolResultPart) {
 				// Tool result parts become tool messages
 				const toolResultContent: string[] = [];
 				for (const resultPart of part.content) {
-					if (resultPart instanceof vscode.LanguageModelTextPart) {
+					if (resultPart instanceof LanguageModelTextPart) {
 						toolResultContent.push(resultPart.value);
 					}
 				}
@@ -112,31 +126,12 @@ export function convertRequestToOpenAI(messages: vscode.LanguageModelChatRequest
 	return result;
 }
 
-/**
- * Roughly estimate tokens for VS Code chat messages (text only)
- * @param msgs Messages to estimate tokens for
- * @returns Estimated token count
- */
-export function estimateMessagesTokens(msgs: readonly vscode.LanguageModelChatMessage[] | readonly vscode.LanguageModelChatRequestMessage[]): number {
-	let total = 0;
-	for (const m of msgs) {
-		for (const part of m.content) {
-			// Handle both old and new message types
-			if (part instanceof vscode.LanguageModelTextPart) {
-				total += Math.ceil((part as any).value.length / 4);
-			} else if (typeof part === 'object' && part !== null && 'value' in part && typeof (part as any).value === 'string') {
-				total += Math.ceil((part as any).value.length / 4);
-			}
-		}
-	}
-	return total;
-}
 
 /**
  * Convert VS Code tool definitions to OpenAI function tool definitions.
  * @param tools Array of VS Code LanguageModelChatTool objects
  */
-export function convertTools(tools: vscode.LanguageModelChatTool[]): { tools?: any[]; tool_choice?: any } {
+export function convertTools(tools: LanguageModelChatTool[]): { tools?: any[]; tool_choice?: any } {
 	if (!tools || tools.length === 0) {
 		return {};
 	}
@@ -172,21 +167,48 @@ export function convertTools(tools: vscode.LanguageModelChatTool[]): { tools?: a
 	return { tools: toolDefs, tool_choice };
 }
 
+export function provideTokenCount(
+	model: LanguageModelChatInformation,
+	text: string | LanguageModelChatRequestMessage,
+	token: CancellationToken
+): Promise<number> {
+	return new Promise((resolve, reject) => {
+		try {
+			// Check for cancellation
+			if (token.isCancellationRequested) {
+				reject(new Error('Token count operation was cancelled'));
+				return;
+			}
 
+			// Get text content from message or use string directly
+			let textContent: string;
+			if (typeof text === 'string') {
+				textContent = text;
+			} else {
+				// Extract text content from LanguageModelChatRequestMessage
+				const contentParts: string[] = [];
+				for (const part of text.content) {
+					if (part instanceof LanguageModelTextPart) {
+						contentParts.push(part.value);
+					}
+				}
+				textContent = contentParts.join('');
+			}
 
+			// Get the encoding for the cl100k_base model family (used by GPT models)
+			const enc = get_encoding("cl100k_base");
 
+			// Encode the text into tokens and get the count
+			const tokens = enc.encode(textContent);
+			const tokenCount = tokens.length;
 
-/**
- * Rough token estimate for tool definitions by JSON size
- * @param tools Tools to estimate tokens for
- * @returns Estimated token count
- */
-export function estimateToolTokens(tools: { type: string; function: { name: string; description?: string; parameters?: object } }[] | undefined): number {
-	if (!tools || tools.length === 0) { return 0; }
-	try {
-		const json = JSON.stringify(tools);
-		return Math.ceil(json.length / 4);
-	} catch {
-		return 0;
-	}
+			// Clean up the encoder
+			enc.free();
+
+			resolve(tokenCount);
+		} catch (error) {
+			reject(error);
+		}
+	});
 }
+

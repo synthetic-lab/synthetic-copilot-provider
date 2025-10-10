@@ -10,7 +10,8 @@ import {
 } from "vscode";
 import OpenAI from "openai";
 import {
-	convertRequestToOpenAI
+	convertRequestToOpenAI,
+	provideTokenCount
 } from "./utils";
 import {
 	SyntheticModelsService,
@@ -127,8 +128,8 @@ export class SyntheticChatModelProvider implements LanguageModelChatProvider {
 	async provideTokenCount(
 		model: LanguageModelChatInformation,
 		text: string | LanguageModelChatRequestMessage,
-		_token: CancellationToken
+		token: CancellationToken
 	): Promise<number> {
-		return 44;
+		return provideTokenCount(model, text, token);
 	}
 }
