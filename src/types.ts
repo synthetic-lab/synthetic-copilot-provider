@@ -1,30 +1,7 @@
-/**
- * OpenAI function-call entry emitted by assistant messages.
- */
-export interface OpenAIToolCall {
-	id: string;
-	type: "function";
-	function: { name: string; arguments: string };
-}
 
-/**
- * OpenAI function tool definition used to advertise tools.
- */
-export interface OpenAIFunctionToolDef {
-	type: "function";
-	function: { name: string; description?: string; parameters?: object };
-}
 
-/**
- * OpenAI-style chat message used for router requests.
- */
-export interface OpenAIChatMessage {
-	role: OpenAIChatRole;
-	content?: string;
-	name?: string;
-	tool_calls?: OpenAIToolCall[];
-	tool_call_id?: string;
-}
+import * as vscode from "vscode";
+import { z } from "zod";
 
 export interface SyntheticModelItem {
 	id: string;
@@ -53,7 +30,7 @@ export interface SyntheticModelDetails {
 		input: number;
 		output: number;
 	};
-	limit: {
+	limit?: {
 		context: number;
 		output: number;
 	};
@@ -64,18 +41,49 @@ export interface SyntheticModelDetails {
  * Response envelope for the router models listing.
  */
 export interface SyntheticModelsResponse {
-	object: string;
 	data: SyntheticModelItem[];
 }
 
-/**
- * Buffer used to accumulate streamed tool call parts until arguments are valid JSON.
- */
-export interface ToolCallBuffer {
-	id?: string;
-	name?: string;
-	args: string;
-}
+// Zod schema for validating the SyntheticModelsResponse
+export const SyntheticModelsResponseSchema = z.object({
+	data: z.array(z.object({
+		id: z.string(),
+		object: z.string(),
+	})),
+});
 
-/** OpenAI-style chat roles. */
-export type OpenAIChatRole = "system" | "user" | "assistant" | "tool";
+// Infer the TypeScript type directly from the schema
+export type ValidatedSyntheticModelsResponse = z.infer<typeof SyntheticModelsResponseSchema>;
+
+// Zod schema for validating the model details API response
+export const ModelDetailsApiResponseSchema = z.object({
+	synthetic: z.object({
+		models: z.record(z.string(), z.object({
+			id: z.string(),
+			name: z.string(),
+			attachment: z.boolean(),
+			reasoning: z.boolean(),
+			temperature: z.boolean(),
+			tool_call: z.boolean(),
+			knowledge: z.string().optional(),
+			release_date: z.string().optional(),
+			last_updated: z.string().optional(),
+			modalities: z.object({
+				input: z.array(z.string()),
+				output: z.array(z.string()),
+			}),
+			open_weights: z.boolean(),
+			cost: z.object({
+				input: z.number(),
+				output: z.number(),
+			}),
+			limit: z.object({
+				context: z.number(),
+				output: z.number(),
+			}).optional(),
+		})),
+	}),
+});
+
+// Infer the TypeScript type directly from the schema
+export type ValidatedModelDetailsApiResponse = z.infer<typeof ModelDetailsApiResponseSchema>;
