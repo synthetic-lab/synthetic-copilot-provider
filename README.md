@@ -6,11 +6,11 @@
 
 Use your [Synthetic](https://synthetic.new/) account with Github Copilot in VS Code!
 
-Use Synthetic to chat with thousands of open-weight [models](https://dev.synthetic.new/docs/api/models), including over 20 always-on frontier models, including [GLM 4.6](https://synthetic.new/hf/zai-org/GLM-4.6), deepseek-ai/DeepSeek-V3.1-Terminus, and [Kimi K2 0905](https://synthetic.new/hf/moonshotai/Kimi-K2-Instruct-0905).
+Use Synthetic to chat with thousands of open-weight [models](https://dev.synthetic.new/docs/api/models), including over 20 always-on frontier models, such as [GLM 4.6](https://synthetic.new/hf/zai-org/GLM-4.6), deepseek-ai/DeepSeek-V3.1-Terminus, and [Kimi K2 0905](https://synthetic.new/hf/moonshotai/Kimi-K2-Instruct-0905).
 
 
 ## ⚡ Quick Start
-1. Install the [Github Copilot](https://marketplace.visualstudio.com/items?itemName=GitHub.copilot) extension.
+1. Install the [Github Copilot Chat](https://marketplace.visualstudio.com/items?itemName=GitHub.copilot-chat) extension.
 1. Install the [Synthetic Provide for Github Copilot](https://marketplace.visualstudio.com/items?itemName=SyntheticLab.synthetic-copilot-provider) extension.
 1. Open the Github Copilot Chat interface.
    - **Windows/Linux** default: <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>I</kbd>
