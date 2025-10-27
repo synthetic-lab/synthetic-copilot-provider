@@ -18,14 +18,17 @@ export function getModelTemperature(modelId: string): number | undefined {
  */
 export async function setModelTemperature(modelId: string, temperature: number | undefined): Promise<void> {
 	const config = vscode.workspace.getConfiguration("synthetic");
-	const temperatures = config.get<Record<string, number>>("modelTemperatures") || {};
-	
+	// VS Code configuration values are returned as immutable/frozen objects.
+	// Clone before mutating to avoid proxy/extensibility errors in tests/runtime.
+	const existing = config.get<Record<string, number>>("modelTemperatures") || {};
+	const temperatures: Record<string, number> = { ...existing };
+
 	if (temperature === undefined) {
 		delete temperatures[modelId];
 	} else {
 		temperatures[modelId] = temperature;
 	}
-	
+
 	await config.update("modelTemperatures", temperatures, vscode.ConfigurationTarget.Global);
 }
 
@@ -36,7 +39,7 @@ export async function showTemperatureConfigUI(secrets: vscode.SecretStorage): Pr
 	// First, we need to get the list of available models
 	const { SyntheticModelsService } = await import("./syntheticModels.js");
 	const modelsService = new SyntheticModelsService("synthetic-vscode-chat/config");
-	
+
 	const apiKey = await modelsService.ensureApiKey(secrets, false);
 	if (!apiKey) {
 		vscode.window.showInformationMessage("Please configure your Synthetic API key first.");
@@ -45,7 +48,7 @@ export async function showTemperatureConfigUI(secrets: vscode.SecretStorage): Pr
 
 	try {
 		const { models } = await modelsService.fetchModels(apiKey);
-		
+
 		if (!models || models.length === 0) {
 			vscode.window.showInformationMessage("No models available.");
 			return;
@@ -57,7 +60,7 @@ export async function showTemperatureConfigUI(secrets: vscode.SecretStorage): Pr
 			description: string;
 			modelId: string;
 		}
-		
+
 		const modelItems: ModelItem[] = models.map((m) => ({
 			label: m.id,
 			description: getModelTemperature(m.id)?.toFixed(2) || "Default",
