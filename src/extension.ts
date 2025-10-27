@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { SyntheticChatModelProvider } from "./provider";
+import { showTemperatureConfigUI } from "./config";
 
 export function activate(context: vscode.ExtensionContext) {
 	// Build a descriptive User-Agent to help quantify API usage
@@ -33,6 +34,12 @@ export function activate(context: vscode.ExtensionContext) {
 			}
 			await context.secrets.store("synthetic.apiKey", apiKey.trim());
 			vscode.window.showInformationMessage("Synthetic API key saved.");
+		})
+	);
+	// Command to configure model temperature
+	context.subscriptions.push(
+		vscode.commands.registerCommand("synthetic.configureTemperature", async () => {
+			await showTemperatureConfigUI(context.secrets);
 		})
 	);
 }

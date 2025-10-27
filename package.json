@@ -34,8 +34,27 @@
 			{
 				"command": "synthetic.manage",
 				"title": "Manage Synthetic Provider"
+			},
+			{
+				"command": "synthetic.configureTemperature",
+				"title": "Configure Model Temperature"
 			}
-		]
+		],
+		"configuration": {
+			"title": "Synthetic Provider",
+			"properties": {
+				"synthetic.modelTemperatures": {
+					"type": "object",
+					"default": {},
+					"description": "Custom temperature values for each model. Keys are model IDs, values are temperature numbers between 0 and 2.",
+					"additionalProperties": {
+						"type": "number",
+						"minimum": 0,
+						"maximum": 2
+					}
+				}
+			}
+		}
 	},
 	"main": "./out/extension.js",
 	"scripts": {
