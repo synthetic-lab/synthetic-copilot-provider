@@ -17,6 +17,7 @@ import {
 	SyntheticModelsService,
 	BASE_URL
 } from "./syntheticModels";
+import { getModelTemperature } from "./config";
 
 export class SyntheticChatModelProvider implements LanguageModelChatProvider {
 	private _modelsService: SyntheticModelsService;
@@ -63,7 +64,15 @@ export class SyntheticChatModelProvider implements LanguageModelChatProvider {
 			const openAIRequest: OpenAI.ChatCompletionCreateParamsStreaming = {
 				...convertRequestToOpenAI(messages, options.tools as vscode.LanguageModelChatTool[]),
 				model: model.id
-			}; const openai = new OpenAI({
+			};
+			
+			// Apply custom temperature if configured
+			const customTemperature = getModelTemperature(model.id);
+			if (customTemperature !== undefined) {
+				openAIRequest.temperature = customTemperature;
+			}
+			
+			const openai = new OpenAI({
 				baseURL: BASE_URL,
 				apiKey: apiKey,
 				defaultHeaders: { 'User-Agent': this.userAgent }
