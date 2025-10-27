@@ -26,12 +26,12 @@ Quick Pick:
 │ claude-2                                 1.20       │
 │ llama-2-70b                              0.50       │
 │ deepseek-ai/DeepSeek-V3.1-Terminus       Default    │
-│ moonshotai/Kimi-K2-Instruct-0905        Default    │
+│ moonshotai/Kimi-K2-Instruct-0905         Default    │
 └─────────────────────────────────────────────────────┘
 ```
 
 - The left column shows the model ID
-- The right column shows the current temperature (or "Default" if not set)
+- The right column shows the current temperature formatted to 2 decimal places, or "Default" if not set
 
 ### Step 3: Entering Temperature Value
 After selecting a model, an input box appears for entering the temperature:
@@ -125,27 +125,25 @@ Settings:
 └─────────────────────────────────────────────────────┘
 ```
 
-## Integration with Chat
+## Integration with GitHub Copilot Chat
 
-When a user selects a model in GitHub Copilot Chat that has a custom temperature:
+When a user uses a model in GitHub Copilot Chat that has a custom temperature configured, the temperature is automatically applied to all API requests for that model. This happens transparently in the background - there is no visual indication in the chat interface itself.
 
-```
-Chat Interface:
-┌─────────────────────────────────────────────────────┐
-│ Model: gpt-4 (Temperature: 1.5)                     │
-├─────────────────────────────────────────────────────┤
-│ User: Write a hello world program                  │
-│                                                     │
-│ Assistant: [Response with temperature 1.5]          │
-└─────────────────────────────────────────────────────┘
-```
+The custom temperature value is sent as part of the API request to the Synthetic service, affecting:
+- Response creativity and randomness
+- Consistency of outputs
+- Deterministic vs. exploratory behavior
 
-The custom temperature is automatically applied to all API requests for that model.
+To verify that your temperature setting is active:
+1. Check the "Synthetic: Model Temperatures" setting in VS Code Settings
+2. Look for your model ID in the configuration
+3. The value shown is the temperature that will be applied to all requests
 
 ## Benefits
 
 1. **Easy to Use**: Simple command palette interface
-2. **Visual Feedback**: See current settings at a glance
+2. **Visual Feedback**: See current settings at a glance in the model picker
 3. **Flexible**: Reset to default at any time
 4. **Persistent**: Settings saved across sessions
 5. **Multiple Options**: Configure via UI or directly in settings.json
+6. **Transparent**: Works automatically without needing to specify temperature per request
