@@ -4,9 +4,9 @@
 	"displayName": "Synthetic Provider for GitHub Copilot",
 	"description": "Synthetic Provider for Github Copilot",
 	"icon": "assets/logo.png",
-	"version": "0.8.1",
+	"version": "0.9.0",
 	"engines": {
-		"vscode": "^1.104.0"
+		"vscode": "^1.105.0"
 	},
 	"categories": [
 		"AI",
@@ -74,7 +74,7 @@
 		"@stylistic/eslint-plugin": "^2.9.0",
 		"@types/mocha": "^10.0.6",
 		"@types/node": "^22",
-		"@types/vscode": "^1.104.0",
+		"@types/vscode": "^1.105.0",
 		"@vscode/dts": "^0.4.1",
 		"@vscode/test-cli": "^0.0.12",
 		"@vscode/test-electron": "^2.5.2",
