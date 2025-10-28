@@ -56,6 +56,9 @@
 			}
 		}
 	},
+	"activationEvents": [
+		"onLanguageModelChat:synthetic"
+	],
 	"main": "./out/extension.js",
 	"scripts": {
 		"vscode:prepublish": "npm run compile",
@@ -84,6 +87,7 @@
 	"dependencies": {
 		"openai": "^6.2.0",
 		"tiktoken": "^1.0.22",
+		"vsce": "^2.15.0",
 		"zod": "^4.1.12"
 	}
 }
