@@ -210,7 +210,8 @@ export class SyntheticModelsService {
 
 			return hydratedInfo;
 		} catch (error) {
-			throw new Error("Failed to hydrate model ID: " + (error instanceof Error ? error.message : 'Unknown error'));
+			console.error("[Synthetic Model Provider] Failed to hydrate model ID:", error);
+			return null;
 		}
 	}
 
