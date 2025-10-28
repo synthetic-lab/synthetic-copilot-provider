@@ -13,6 +13,7 @@ import {
 	convertRequestToOpenAI,
 	provideTokenCount
 } from "./utils";
+import { ThinkSegment, ThinkTagParser } from "./thinkParser";
 import {
 	SyntheticModelsService,
 	BASE_URL
@@ -79,6 +80,7 @@ export class SyntheticChatModelProvider implements LanguageModelChatProvider {
 			});
 
 			const stream = await openai.chat.completions.create(openAIRequest);
+			const thinkParser = new ThinkTagParser();
 			const toolCallStates = new Map<number, ToolCallAccumulator>();
 			const emitToolCallIfReady = (index: number, state: ToolCallAccumulator) => {
 				if (state.emitted) {
@@ -135,8 +137,9 @@ export class SyntheticChatModelProvider implements LanguageModelChatProvider {
 				// Handle text content
 				const contentValue = (delta as { content?: unknown }).content;
 				const content = extractTextContent(contentValue);
-				if (content) {
-					progress.report(new vscode.LanguageModelTextPart(content));
+				const segments = thinkParser.push(content);
+				if (segments.length > 0) {
+					this.emitContentSegments(segments, progress);
 				}
 
 				// Handle tool calls
@@ -183,6 +186,11 @@ export class SyntheticChatModelProvider implements LanguageModelChatProvider {
 				}
 			}
 
+			const remainingSegments = thinkParser.flush();
+			if (remainingSegments.length > 0) {
+				this.emitContentSegments(remainingSegments, progress);
+			}
+
 			for (const [index, state] of toolCallStates.entries()) {
 				if (!state.emitted) {
 						emitToolCallIfReady(index, state);
@@ -211,22 +219,67 @@ export class SyntheticChatModelProvider implements LanguageModelChatProvider {
 			return;
 		}
 
+		for (const chunk of thinkingChunks) {
+			this.emitThinkingChunk(progress, chunk);
+		}
+	}
+
+	private emitContentSegments(segments: ThinkSegment[], progress: Progress<LanguageModelResponsePart>): void {
+		let textBuffer = "";
+		let thinkingBuffer = "";
+
+		const flushText = () => {
+			if (textBuffer.length === 0) {
+				return;
+			}
+			progress.report(new vscode.LanguageModelTextPart(textBuffer));
+			textBuffer = "";
+		};
+
+		const flushThinking = () => {
+			if (thinkingBuffer.length === 0) {
+				return;
+			}
+			this.emitThinkingChunk(progress, thinkingBuffer);
+			thinkingBuffer = "";
+		};
+
+		for (const segment of segments) {
+			if (!segment.value || segment.value.length === 0) {
+				continue;
+			}
+
+			if (segment.kind === "thinking") {
+				flushText();
+				thinkingBuffer += segment.value;
+				continue;
+			}
+
+			flushThinking();
+			textBuffer += segment.value;
+		}
+
+		flushThinking();
+		flushText();
+	}
+
+	private emitThinkingChunk(progress: Progress<LanguageModelResponsePart>, chunk: string): void {
+		if (!chunk || chunk.length === 0) {
+			return;
+		}
+
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		const thinkingCtor = (vscode as any).LanguageModelChatThinkingPart ?? (vscode as any).LanguageModelThinkingPart;
-
-		for (const chunk of thinkingChunks) {
-			if (thinkingCtor) {
-				try {
-					progress.report(new thinkingCtor(chunk));
-				} catch (error) {
-					console.warn("[Synthetic Model Provider] Failed to create thinking part, falling back to text part:", error);
-					progress.report(new vscode.LanguageModelTextPart(chunk));
-				}
-			} else {
-				// Fallback to text parts if the runtime does not yet expose the thinking part constructor
-				progress.report(new vscode.LanguageModelTextPart(chunk));
+		if (thinkingCtor) {
+			try {
+				progress.report(new thinkingCtor(chunk));
+				return;
+			} catch (error) {
+				console.warn("[Synthetic Model Provider] Failed to create thinking part, falling back to text part:", error);
 			}
 		}
+
+		progress.report(new vscode.LanguageModelTextPart(chunk));
 	}
 
 	/**
