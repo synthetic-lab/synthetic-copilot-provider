@@ -1,13 +1,21 @@
 import * as vscode from "vscode";
-import type { SyntheticModelItem, SyntheticModelsResponse, SyntheticModelDetails, ValidatedSyntheticModelsResponse, ValidatedModelDetailsApiResponse } from "./types";
+import type { SyntheticModelItem, SyntheticModelDetails, ValidatedSyntheticModelsResponse, ValidatedModelDetailsApiResponse } from "./types";
 import { SyntheticModelsResponseSchema, ModelDetailsApiResponseSchema } from "./types";
 import { CancellationToken, LanguageModelChatInformation } from "vscode";
-import { z } from "zod";
 
 export const BASE_URL = "https://api.synthetic.new/openai/v1";
 export const DEFAULT_CONTEXT_LENGTH = 128000;
 export const DEFAULT_MAX_OUTPUT_TOKENS = 16000;
 export const MAX_TOOLS = 128;
+
+type BaseCapabilities = import("vscode").LanguageModelChatInformation["capabilities"];
+type ExtendedCapabilities = BaseCapabilities & { supportsThinking?: boolean };
+
+const DEFAULT_CAPABILITIES: ExtendedCapabilities = {
+	toolCalling: false,
+	imageInput: false,
+	supportsThinking: false,
+};
 
 export const DEFAULT_MODEL_DETAILS = {
 	tooltip: "Synthetic",
@@ -16,10 +24,7 @@ export const DEFAULT_MODEL_DETAILS = {
 	version: "1.0.0",
 	maxInputTokens: DEFAULT_CONTEXT_LENGTH,
 	maxOutputTokens: DEFAULT_MAX_OUTPUT_TOKENS,
-	capabilities: {
-		toolCalling: false,
-		imageInput: false,
-	},
+	capabilities: DEFAULT_CAPABILITIES,
 } satisfies Partial<import("vscode").LanguageModelChatInformation>;
 
 /**
@@ -187,6 +192,12 @@ export class SyntheticModelsService {
 
 
 			// Map model details to LanguageModelChatInformation properties
+			const capabilities: ExtendedCapabilities = {
+				toolCalling: modelDetails.tool_call || false,
+				imageInput: modelDetails.modalities?.input?.includes('image') || false,
+				supportsThinking: modelDetails.reasoning || false,
+			};
+
 			const hydratedInfo: Partial<import("vscode").LanguageModelChatInformation> = {
 				name: modelDetails.name,
 				tooltip: modelDetails.name,
@@ -194,14 +205,12 @@ export class SyntheticModelsService {
 				version: "1.0.0",
 				maxInputTokens: modelDetails.limit?.context || DEFAULT_CONTEXT_LENGTH,
 				maxOutputTokens: modelDetails.limit?.output || DEFAULT_MAX_OUTPUT_TOKENS,
-				capabilities: {
-					toolCalling: modelDetails.tool_call || false,
-					imageInput: modelDetails.modalities?.input?.includes('image') || false,
-				},
+				capabilities,
 			};
 
 			return hydratedInfo;
 		} catch (error) {
+			console.error("[Synthetic Model Provider] Failed to hydrate model ID:", error);
 			return null;
 		}
 	}
@@ -253,6 +262,13 @@ export class SyntheticModelsService {
 				const contextLen = modelInfo.maxInputTokens || DEFAULT_CONTEXT_LENGTH;
 				const maxOutput = modelInfo.maxOutputTokens || DEFAULT_MAX_OUTPUT_TOKENS;
 
+				const supportsThinking = Boolean((modelInfo.capabilities as { supportsThinking?: boolean } | undefined)?.supportsThinking);
+				const capabilitiesFinal: ExtendedCapabilities = {
+					toolCalling: modelInfo.capabilities?.toolCalling || false,
+					imageInput: modelInfo.capabilities?.imageInput || false,
+					supportsThinking,
+				};
+
 				const modelInfo_final = {
 					id: m.id,
 					name: modelInfo.name || m.id,
@@ -262,10 +278,7 @@ export class SyntheticModelsService {
 					version: modelInfo.version || "1.0.0",
 					maxInputTokens: contextLen,
 					maxOutputTokens: maxOutput,
-					capabilities: {
-						toolCalling: modelInfo.capabilities?.toolCalling || false,
-						imageInput: modelInfo.capabilities?.imageInput || false,
-					},
+					capabilities: capabilitiesFinal,
 				} satisfies LanguageModelChatInformation;
 
 				infos.push(modelInfo_final);

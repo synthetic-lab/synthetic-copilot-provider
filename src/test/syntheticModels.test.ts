@@ -77,8 +77,13 @@ suite("Synthetic Models Service Tests", () => {
 							"test-model": {
 								id: "test-model",
 								name: "Test Model",
+								attachment: false,
+								reasoning: false,
+								temperature: false,
 								tool_call: false,
 								modalities: { input: ["text"], output: ["text"] },
+								open_weights: false,
+								cost: { input: 0, output: 0 },
 								limit: { context: 1000, output: 500 }
 							}
 						}
