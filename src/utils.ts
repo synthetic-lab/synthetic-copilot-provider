@@ -162,7 +162,7 @@ export function convertTools(tools: LanguageModelChatTool[]): { tools?: any[]; t
 			};
 		});
 
-	let tool_choice: "auto" | { type: "function"; function: { name: string } } = "auto";
+	const tool_choice: "auto" | { type: "function"; function: { name: string } } = "auto";
 
 	return { tools: toolDefs, tool_choice };
 }
