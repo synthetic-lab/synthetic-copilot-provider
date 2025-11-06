@@ -1,11 +1,35 @@
 
 
-import * as vscode from "vscode";
 import { z } from "zod";
 
 export interface SyntheticModelItem {
 	id: string;
-	object: string;
+	name: string;
+	provider: string;
+	always_on?: boolean;
+	hugging_face_id?: string;
+	input_modalities: string[];
+	output_modalities: string[];
+	context_length?: number;
+	max_output_length?: number;
+	pricing?: {
+		prompt: string;
+		completion: string;
+		image?: string;
+		request?: string;
+		input_cache_reads?: string;
+		input_cache_writes?: string;
+	};
+	created?: number;
+	quantization?: string;
+	supported_sampling_parameters?: string[];
+	supported_features?: string[];
+	openrouter?: {
+		slug: string;
+	};
+	datacenters?: Array<{
+		country_code: string;
+	}>;
 }
 
 /**
@@ -48,7 +72,32 @@ export interface SyntheticModelsResponse {
 export const SyntheticModelsResponseSchema = z.object({
 	data: z.array(z.object({
 		id: z.string(),
-		object: z.string(),
+		name: z.string(),
+		provider: z.string(),
+		always_on: z.boolean().optional(),
+		hugging_face_id: z.string().optional(),
+		input_modalities: z.array(z.string()),
+		output_modalities: z.array(z.string()),
+		context_length: z.number().optional(),
+		max_output_length: z.number().optional(),
+		pricing: z.object({
+			prompt: z.string(),
+			completion: z.string(),
+			image: z.string().optional(),
+			request: z.string().optional(),
+			input_cache_reads: z.string().optional(),
+			input_cache_writes: z.string().optional(),
+		}).optional(),
+		created: z.number().optional(),
+		quantization: z.string().optional(),
+		supported_sampling_parameters: z.array(z.string()).optional(),
+		supported_features: z.array(z.string()).optional(),
+		openrouter: z.object({
+			slug: z.string(),
+		}).optional(),
+		datacenters: z.array(z.object({
+			country_code: z.string(),
+		})).optional(),
 	})),
 });
 

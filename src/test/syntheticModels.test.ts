@@ -20,7 +20,7 @@ suite("Synthetic Models Service Tests", () => {
 		// Mock secret storage
 		const mockSecrets = {
 			get: async (key: string) => {
-				if (key === "synthetic.apiKey") return undefined;
+				if (key === "synthetic.apiKey") {return undefined;}
 				return undefined;
 			},
 			store: async (key: string, value: string) => {},
@@ -219,15 +219,24 @@ suite("Synthetic Models Service Tests", () => {
 			"data": [
 				{
 					"id": "hf:zai-org/GLM-4.6",
-					"object": "model"
+					"name": "zai-org/GLM-4.6",
+					"provider": "synthetic",
+					"input_modalities": ["text"],
+					"output_modalities": ["text"]
 				},
 				{
 					"id": "hf:zai-org/GLM-4.5",
-					"object": "model"
+					"name": "zai-org/GLM-4.5",
+					"provider": "fireworks",
+					"input_modalities": ["text"],
+					"output_modalities": ["text"]
 				},
 				{
 					"id": "hf:NousResearch/Hermes-4-405B-FP8",
-					"object": "model"
+					"name": "NousResearch/Hermes-4-405B-FP8",
+					"provider": "together",
+					"input_modalities": ["text"],
+					"output_modalities": ["text"]
 				}
 			]
 		};
@@ -250,19 +259,22 @@ suite("Synthetic Models Service Tests", () => {
 				assert.ok(result.models, "Should return models array");
 				assert.strictEqual(result.models.length, 3, "Should return 3 models");
 				assert.strictEqual(result.models[0].id, "hf:zai-org/GLM-4.6", "Should have correct first model ID");
-				assert.strictEqual(result.models[0].object, "model", "Should have correct object type");
+				assert.strictEqual(result.models[0].name, "zai-org/GLM-4.6", "Should have correct model name");
 			} finally {
 				global.fetch = originalFetch;
 			}
 		});
 
-		test("should reject API response missing required 'object' field", async () => {
+		test("should reject API response missing required 'name' field", async () => {
 			const apiKey = "test-api-key";
 			const invalidResponse = {
 				"data": [
 					{
-						"id": "hf:zai-org/GLM-4.6"
-						// Missing 'object' field
+						"id": "hf:zai-org/GLM-4.6",
+						"provider": "synthetic",
+						"input_modalities": ["text"],
+						"output_modalities": ["text"]
+						// Missing 'name' field
 					}
 				]
 			};
@@ -291,7 +303,10 @@ suite("Synthetic Models Service Tests", () => {
 			const invalidResponse = {
 				"data": [
 					{
-						"object": "model"
+						"name": "zai-org/GLM-4.6",
+						"provider": "synthetic",
+						"input_modalities": ["text"],
+						"output_modalities": ["text"]
 						// Missing 'id' field
 					}
 				]
@@ -316,13 +331,16 @@ suite("Synthetic Models Service Tests", () => {
 			}
 		});
 
-		test("should reject API response with wrong data type for 'object' field", async () => {
+		test("should reject API response with wrong data type for 'name' field", async () => {
 			const apiKey = "test-api-key";
 			const invalidResponse = {
 				"data": [
 					{
 						"id": "hf:zai-org/GLM-4.6",
-						"object": 123 // Should be string, not number
+						"name": 123, // Should be string, not number
+						"provider": "synthetic",
+						"input_modalities": ["text"],
+						"output_modalities": ["text"]
 					}
 				]
 			};
@@ -352,7 +370,10 @@ suite("Synthetic Models Service Tests", () => {
 				"data": [
 					{
 						"id": 123, // Should be string, not number
-						"object": "model"
+						"name": "zai-org/GLM-4.6",
+						"provider": "synthetic",
+						"input_modalities": ["text"],
+						"output_modalities": ["text"]
 					}
 				]
 			};
