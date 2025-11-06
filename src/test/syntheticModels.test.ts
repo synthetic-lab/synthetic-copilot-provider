@@ -1,7 +1,7 @@
 import * as assert from "assert";
 import * as vscode from "vscode";
 import { SyntheticModelsService, BASE_URL, DEFAULT_CONTEXT_LENGTH, DEFAULT_MAX_OUTPUT_TOKENS } from "../syntheticModels";
-import { SyntheticModelsResponseSchema, ModelDetailsApiResponseSchema } from "../types";
+import { SyntheticModelsResponseSchema, SyntheticModelsDevApiResponseSchema } from "../types";
 import { z } from "zod";
 
 suite("Synthetic Models Service Tests", () => {
@@ -648,7 +648,7 @@ suite("Synthetic Models Service Tests", () => {
 				};
 
 				// Test valid data
-				const validResult = ModelDetailsApiResponseSchema.safeParse(validModelDetails);
+				const validResult = SyntheticModelsDevApiResponseSchema.safeParse(validModelDetails);
 				assert.ok(validResult.success, "Valid model details should pass validation");
 				if (validResult.success) {
 					assert.ok(validResult.data.synthetic.models["test-model"], "Should parse model details correctly");
@@ -666,7 +666,7 @@ suite("Synthetic Models Service Tests", () => {
 						}
 					}
 				};
-				const invalidResult = ModelDetailsApiResponseSchema.safeParse(invalidModelDetails);
+				const invalidResult = SyntheticModelsDevApiResponseSchema.safeParse(invalidModelDetails);
 				assert.ok(!invalidResult.success, "Invalid model details should fail validation");
 				if (!invalidResult.success) {
 					assert.ok(invalidResult.error instanceof z.ZodError, "Should return ZodError");

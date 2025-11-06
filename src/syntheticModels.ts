@@ -1,7 +1,8 @@
 import * as vscode from "vscode";
-import type { SyntheticModelItem, SyntheticModelDetails, ValidatedSyntheticModelsResponse, ValidatedModelDetailsApiResponse } from "./types";
-import { SyntheticModelsResponseSchema, ModelDetailsApiResponseSchema } from "./types";
+import type { SyntheticModelDetails, SyntheticModelDevDetails } from "./types";
+import { SyntheticModelsResponseSchema, SyntheticModelsDevApiResponseSchema } from "./types";
 import { CancellationToken, LanguageModelChatInformation } from "vscode";
+import { tryit } from "radash";
 
 export const BASE_URL = "https://api.synthetic.new/openai/v1";
 export const DEFAULT_CONTEXT_LENGTH = 128000;
@@ -31,7 +32,7 @@ export const DEFAULT_MODEL_DETAILS = {
  * Service for handling model fetching and hydration from Synthetic API
  */
 export class SyntheticModelsService {
-    private _modelDetailsCache: Record<string, SyntheticModelDetails> | null = null;
+    private _modelDetailsCache: Record<string, SyntheticModelDevDetails> | null = null;
 
     constructor(private readonly userAgent: string) {}
 
@@ -63,7 +64,7 @@ export class SyntheticModelsService {
      * Fetch the list of models and supplementary metadata from Synthetic.
      * @param apiKey The Synthetic API key used to authenticate.
      */
-    async fetchModels(apiKey: string): Promise<{ models: SyntheticModelItem[] }> {
+    async fetchModels(apiKey: string): Promise<{ models: SyntheticModelDetails[] }> {
 			try {
 				const response = await fetch(`${BASE_URL}/models`, {
 					headers: {
@@ -90,21 +91,18 @@ export class SyntheticModelsService {
 
             // Fetch and PARSE the data using the schema
             const rawData = await response.json();
-            let data: ValidatedSyntheticModelsResponse;
+            const [err, data] = tryit(() => SyntheticModelsResponseSchema.parse(rawData))();
+						if (err) {
+              console.error("[Synthetic Model Provider] Model data validation failed:", err);
 
-            try {
-                data = SyntheticModelsResponseSchema.parse(rawData); // This line validates!
-            } catch (validationError) {
-                console.error("[Synthetic Model Provider] Model data validation failed:", validationError);
+              // Emit user-friendly error message
+              vscode.window.showInformationMessage(
+                  `Failed to parse model data from Synthetic API. The API response format may have changed. Please try again later.`
+              );
 
-                // Emit user-friendly error message
-                vscode.window.showInformationMessage(
-                    `Failed to parse model data from Synthetic API. The API response format may have changed. Please try again later.`
-                );
-
-                throw new Error(
-                    `Invalid API response format from Synthetic: ${validationError instanceof Error ? validationError.message : 'Unknown validation error'}`
-                );
+              throw new Error(
+                  `Invalid API response format from Synthetic: ${err instanceof Error ? err.message : 'Unknown validation error'}`
+              );
             }
 
             const models = data?.data;
@@ -162,18 +160,16 @@ export class SyntheticModelsService {
 
 				// Fetch and PARSE the data using the schema
 				const rawData = await response!.json();
-				let data: ValidatedModelDetailsApiResponse;
 
-				try {
-					data = ModelDetailsApiResponseSchema.parse(rawData); // This line validates!
-				} catch (validationError) {
-					console.error("[Synthetic Model Provider] Model details validation failed:", validationError);
+				const [err, data] = tryit(() => SyntheticModelsDevApiResponseSchema.parse(rawData))();
+				if (err) {
+					console.error("[Synthetic Model Provider] Model details validation failed:", err);
 
 					// Note: We don't emit user messages here since this is a fallback operation
 					// and the main error handling in prepareLanguageModelChatInformation will handle user notification
 
 					throw new Error(
-						`Invalid model details API response format: ${validationError instanceof Error ? validationError.message : 'Unknown validation error'}`
+						`Invalid model details API response format: ${err instanceof Error ? err.message : 'Unknown validation error'}`
 					);
 				}
 
