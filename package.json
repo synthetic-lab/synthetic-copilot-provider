@@ -4,7 +4,7 @@
 	"displayName": "Synthetic Provider for GitHub Copilot",
 	"description": "Synthetic Provider for Github Copilot",
 	"icon": "assets/logo.png",
-	"version": "0.10.0",
+	"version": "0.11.0",
 	"engines": {
 		"vscode": "^1.105.0"
 	},
