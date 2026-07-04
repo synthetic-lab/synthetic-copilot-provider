@@ -10,7 +10,8 @@ const QuantizationSpec = z.literal("int4")
   .or(z.literal("fp16"))
   .or(z.literal("bf16"))
   .or(z.literal("fp32"))
-  .or(z.literal("nvfp4"));
+  .or(z.literal("nvfp4"))
+  .or(z.literal("mxfp4"));
 
 const SamplingParameterSpec = z.literal("temperature")
   .or(z.literal("top_p"))
