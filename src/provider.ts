@@ -9,15 +9,9 @@ import {
 	Progress,
 } from "vscode";
 import OpenAI from "openai";
-import {
-	convertRequestToOpenAI,
-	provideTokenCount
-} from "./utils";
+import { convertRequestToOpenAI, provideTokenCount } from "./utils";
 import { ThinkSegment, ThinkTagParser } from "./thinkParser";
-import {
-	SyntheticModelsService,
-	BASE_URL
-} from "./syntheticModels";
+import { SyntheticModelsService, BASE_URL } from "./syntheticModels";
 import { getModelTemperature } from "./config";
 
 export class SyntheticChatModelProvider implements LanguageModelChatProvider {
@@ -26,15 +20,41 @@ export class SyntheticChatModelProvider implements LanguageModelChatProvider {
 	 * Create a provider using the given secret storage for the API key.
 	 * @param secrets VS Code secret storage.
 	 */
-	constructor(private readonly secrets: vscode.SecretStorage, private readonly userAgent: string) {
+	constructor(
+		private readonly secrets: vscode.SecretStorage,
+		private readonly userAgent: string
+	) {
 		this._modelsService = new SyntheticModelsService(userAgent);
+	}
+
+	/**
+	 * Eagerly prefetch models and hydrate them so the first
+	 * provideLanguageModelChatInformation call returns immediately.
+	 */
+	async prefetchModels(): Promise<void> {
+		try {
+			await this._modelsService.prepareLanguageModelChatInformation(
+				this.secrets,
+				{ silent: true },
+				new vscode.CancellationTokenSource().token
+			);
+			console.log("[Synthetic] Models prefetched successfully");
+		} catch (err) {
+			console.warn("[Synthetic] Model prefetch failed:", err);
+		}
 	}
 
 	async provideLanguageModelChatInformation(
 		options: { silent: boolean },
 		_token: CancellationToken
 	): Promise<LanguageModelChatInformation[]> {
-		const info = await this._modelsService.prepareLanguageModelChatInformation(this.secrets, { silent: options.silent ?? false }, _token);
+		console.log("[Synthetic] provideLanguageModelChatInformation called, silent:", options.silent);
+		const info = await this._modelsService.prepareLanguageModelChatInformation(
+			this.secrets,
+			{ silent: options.silent ?? false },
+			_token
+		);
+		console.log("[Synthetic] provideLanguageModelChatInformation returned models:", info.length);
 		return info;
 	}
 
@@ -55,16 +75,17 @@ export class SyntheticChatModelProvider implements LanguageModelChatProvider {
 		progress: Progress<LanguageModelResponsePart>,
 		token: CancellationToken
 	): Promise<void> {
-
 		const apiKey = await this._modelsService.ensureApiKey(this.secrets, true);
+		console.log("[Synthetic] provideLanguageModelChatResponse - apiKey found:", !!apiKey);
 		if (!apiKey) {
+			console.error("[Synthetic] provideLanguageModelChatResponse - No API key!");
 			throw new Error("Synthetic API key not found");
 		}
 
 		try {
 			const openAIRequest: OpenAI.ChatCompletionCreateParamsStreaming = {
 				...convertRequestToOpenAI(messages, options.tools as vscode.LanguageModelChatTool[]),
-				model: model.id
+				model: model.id,
 			};
 
 			// Apply custom temperature if configured
@@ -73,13 +94,22 @@ export class SyntheticChatModelProvider implements LanguageModelChatProvider {
 				openAIRequest.temperature = customTemperature;
 			}
 
+			// Emit progress IMMEDIATELY so VS Code knows the provider is working,
+			// even while waiting for the HTTP connection to be established.
+			// This prevents VS Code from showing "Thinking" indefinitely.
+			progress.report(new vscode.LanguageModelTextPart(""));
+
 			const openai = new OpenAI({
 				baseURL: BASE_URL,
 				apiKey: apiKey,
-				defaultHeaders: { 'User-Agent': this.userAgent }
+				defaultHeaders: { "User-Agent": this.userAgent },
+				timeout: 30000, // 30 second timeout for individual requests
 			});
 
+			const streamStartTime = Date.now();
 			const stream = await openai.chat.completions.create(openAIRequest);
+			console.log("[Synthetic] Stream started for model:", model.id, "in", Date.now() - streamStartTime, "ms");
+
 			const thinkParser = new ThinkTagParser();
 			const toolCallStates = new Map<number, ToolCallAccumulator>();
 			const emitToolCallIfReady = (index: number, state: ToolCallAccumulator) => {
@@ -181,7 +211,7 @@ export class SyntheticChatModelProvider implements LanguageModelChatProvider {
 				const finishReason = (choice as { finish_reason?: string }).finish_reason;
 				if (finishReason === "tool_calls") {
 					for (const [index, state] of toolCallStates.entries()) {
-							emitToolCallIfReady(index, state);
+						emitToolCallIfReady(index, state);
 					}
 				}
 			}
@@ -193,14 +223,14 @@ export class SyntheticChatModelProvider implements LanguageModelChatProvider {
 
 			for (const [index, state] of toolCallStates.entries()) {
 				if (!state.emitted) {
-						emitToolCallIfReady(index, state);
+					emitToolCallIfReady(index, state);
 				}
 			}
 		} catch (error) {
 			console.error("[Synthetic Model Provider] Error during chat completion:", error);
 
 			// Emit user-friendly error message
-			const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+			const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
 			vscode.window.showInformationMessage(
 				`Failed to get completion from Synthetic: ${errorMessage}. Please check your API key and connection.`
 			);

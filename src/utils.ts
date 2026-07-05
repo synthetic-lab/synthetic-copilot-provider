@@ -1,41 +1,50 @@
-
-import OpenAI from 'openai';
-import { get_encoding } from "tiktoken";
+import OpenAI from "openai";
+import { get_encoding, type Tiktoken } from "tiktoken";
 import {
 	CancellationToken,
 	LanguageModelChatInformation,
-	LanguageModelChatProvider,
 	LanguageModelChatRequestMessage,
 	LanguageModelChatTool,
-	ProvideLanguageModelChatResponseOptions,
 	LanguageModelToolCallPart,
 	LanguageModelTextPart,
 	LanguageModelChatMessageRole,
-	LanguageModelResponsePart,
 	LanguageModelToolResultPart,
-	Progress,
 } from "vscode";
+
+// Lazily-initialized, cached encoder. get_encoding() loads BPE data synchronously
+// and blocks the event loop, so we initialize it once and reuse it.
+let cachedEncoder: Tiktoken | null = null;
+function getOrCreateEncoder(): Tiktoken {
+	if (!cachedEncoder) {
+		cachedEncoder = get_encoding("cl100k_base");
+	}
+	return cachedEncoder!;
+}
+
 /**
  * Convert an array of VS Code LanguageModelChatRequestMessage to a single OpenAI ChatCompletionCreateParamsStreaming
  * @param messages Array of VS Code chat messages to convert
  * @param tools Optional array of tool definitions to include in the request
  * @returns OpenAI ChatCompletionCreateParamsStreaming object with all messages collapsed into one conversation
  */
-export function convertRequestToOpenAI(messages: LanguageModelChatRequestMessage[], tools?: LanguageModelChatTool[]): OpenAI.ChatCompletionCreateParamsStreaming {
+export function convertRequestToOpenAI(
+	messages: LanguageModelChatRequestMessage[],
+	tools?: LanguageModelChatTool[]
+): OpenAI.ChatCompletionCreateParamsStreaming {
 	const openaiMessages: OpenAI.ChatCompletionMessageParam[] = [];
 
 	for (const message of messages) {
 		// Convert role
-		let openaiRole: 'system' | 'user' | 'assistant' | 'tool';
+		let openaiRole: "system" | "user" | "assistant" | "tool";
 		switch (message.role) {
 			case LanguageModelChatMessageRole.User:
-				openaiRole = 'user';
+				openaiRole = "user";
 				break;
 			case LanguageModelChatMessageRole.Assistant:
-				openaiRole = 'assistant';
+				openaiRole = "assistant";
 				break;
 			default:
-				openaiRole = 'user'; // Default to user for unknown roles
+				openaiRole = "user"; // Default to user for unknown roles
 		}
 
 		// Convert content
@@ -51,11 +60,11 @@ export function convertRequestToOpenAI(messages: LanguageModelChatRequestMessage
 				// Convert tool call parts
 				toolCalls.push({
 					id: part.callId,
-					type: 'function',
+					type: "function",
 					function: {
 						name: part.name,
-						arguments: JSON.stringify(part.input)
-					}
+						arguments: JSON.stringify(part.input),
+					},
 				});
 			} else if (part instanceof LanguageModelToolResultPart) {
 				// Tool result parts become tool messages
@@ -66,50 +75,51 @@ export function convertRequestToOpenAI(messages: LanguageModelChatRequestMessage
 					}
 				}
 				toolCallId = part.callId;
-				toolResult = toolResultContent.join('');
+				toolResult = toolResultContent.join("");
 			}
 		}
 
 		// Create the OpenAI message based on content type
 		if (contentParts.length > 0) {
-			const messageContent = contentParts.join('');
+			const messageContent = contentParts.join("");
 
-			if (openaiRole === 'assistant' && toolCalls.length > 0) {
+			if (openaiRole === "assistant" && toolCalls.length > 0) {
 				// Assistant message with tool calls
 				openaiMessages.push({
 					role: openaiRole,
 					content: messageContent,
 					name: message.name || undefined,
-					tool_calls: toolCalls
+					tool_calls: toolCalls,
 				} as OpenAI.ChatCompletionAssistantMessageParam);
 			} else if (toolCallId && toolResult) {
 				// Tool result message
 				openaiMessages.push({
-					role: 'tool',
+					role: "tool",
 					content: toolResult,
-					tool_call_id: toolCallId
+					tool_call_id: toolCallId,
 				} as OpenAI.ChatCompletionToolMessageParam);
 			} else {
 				// Standard message (user, assistant, or system)
 				openaiMessages.push({
 					role: openaiRole,
 					content: messageContent,
-					name: message.name || undefined
+					name: message.name || undefined,
 				});
 			}
 		} else if (toolCallId && toolResult) {
 			// Tool result message without text content
 			openaiMessages.push({
-				role: 'tool',
+				role: "tool",
 				content: toolResult,
-				tool_call_id: toolCallId
+				tool_call_id: toolCallId,
 			} as OpenAI.ChatCompletionToolMessageParam);
 		}
 	}
 
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	const result: any = {
 		stream: true,
-		messages: openaiMessages
+		messages: openaiMessages,
 	};
 
 	// Include tool definitions if provided
@@ -126,11 +136,11 @@ export function convertRequestToOpenAI(messages: LanguageModelChatRequestMessage
 	return result;
 }
 
-
 /**
  * Convert VS Code tool definitions to OpenAI function tool definitions.
  * @param tools Array of VS Code LanguageModelChatTool objects
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function convertTools(tools: LanguageModelChatTool[]): { tools?: any[]; tool_choice?: any } {
 	if (!tools || tools.length === 0) {
 		return {};
@@ -143,12 +153,16 @@ export function convertTools(tools: LanguageModelChatTool[]): { tools?: any[]; t
 			const description = typeof t.description === "string" ? t.description : "";
 			const params = t.inputSchema ?? {
 				type: "object",
-				properties: {}
+				properties: {},
 			};
 
 			// Special case: if there are no properties, don't include additionalProperties
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			const paramsWithSchema = params as any;
-			if (Object.keys(paramsWithSchema.properties || {}).length === 0 && paramsWithSchema.additionalProperties === undefined) {
+			if (
+				Object.keys(paramsWithSchema.properties || {}).length === 0 &&
+				paramsWithSchema.additionalProperties === undefined
+			) {
 				delete paramsWithSchema.additionalProperties;
 			}
 
@@ -173,42 +187,41 @@ export function provideTokenCount(
 	token: CancellationToken
 ): Promise<number> {
 	return new Promise((resolve, reject) => {
-		try {
-			// Check for cancellation
-			if (token.isCancellationRequested) {
-				reject(new Error('Token count operation was cancelled'));
-				return;
-			}
-
-			// Get text content from message or use string directly
-			let textContent: string;
-			if (typeof text === 'string') {
-				textContent = text;
-			} else {
-				// Extract text content from LanguageModelChatRequestMessage
-				const contentParts: string[] = [];
-				for (const part of text.content) {
-					if (part instanceof LanguageModelTextPart) {
-						contentParts.push(part.value);
-					}
+		// Defer to the next tick so the event loop isn't blocked by tiktoken's
+		// synchronous BPE encoding. VS Code calls this frequently for token
+		// estimation and blocking would freeze the extension host.
+		setImmediate(() => {
+			try {
+				// Check for cancellation
+				if (token.isCancellationRequested) {
+					reject(new Error("Token count operation was cancelled"));
+					return;
 				}
-				textContent = contentParts.join('');
+
+				// Get text content from message or use string directly
+				let textContent: string;
+				if (typeof text === "string") {
+					textContent = text;
+				} else {
+					// Extract text content from LanguageModelChatRequestMessage
+					const contentParts: string[] = [];
+					for (const part of text.content) {
+						if (part instanceof LanguageModelTextPart) {
+							contentParts.push(part.value);
+						}
+					}
+					textContent = contentParts.join("");
+				}
+
+				// Use cached encoder - don't create/free every call
+				const enc = getOrCreateEncoder();
+
+				// Encode the text into tokens and get the count
+				const tokens = enc.encode(textContent);
+				resolve(tokens.length);
+			} catch (error) {
+				reject(error);
 			}
-
-			// Get the encoding for the cl100k_base model family (used by GPT models)
-			const enc = get_encoding("cl100k_base");
-
-			// Encode the text into tokens and get the count
-			const tokens = enc.encode(textContent);
-			const tokenCount = tokens.length;
-
-			// Clean up the encoder
-			enc.free();
-
-			resolve(tokenCount);
-		} catch (error) {
-			reject(error);
-		}
+		});
 	});
 }
-
