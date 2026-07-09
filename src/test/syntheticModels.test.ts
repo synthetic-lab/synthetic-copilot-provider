@@ -6,9 +6,22 @@ import { z } from "zod";
 
 suite("Synthetic Models Service Tests", () => {
 	let modelsService: SyntheticModelsService;
+	let savedEnvApiKey: string | undefined;
 
 	setup(() => {
 		modelsService = new SyntheticModelsService("test-user-agent");
+		// Keep tests hermetic so the SYNTHETIC_API_KEY env-var fallback doesn't
+		// satisfy the "no API key" cases with ambient credentials.
+		savedEnvApiKey = process.env.SYNTHETIC_API_KEY;
+		delete process.env.SYNTHETIC_API_KEY;
+	});
+
+	teardown(() => {
+		if (savedEnvApiKey === undefined) {
+			delete process.env.SYNTHETIC_API_KEY;
+		} else {
+			process.env.SYNTHETIC_API_KEY = savedEnvApiKey;
+		}
 	});
 
 	test("should create service with user agent", () => {

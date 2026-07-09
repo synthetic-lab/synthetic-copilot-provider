@@ -32,29 +32,22 @@ export class SyntheticChatModelProvider implements LanguageModelChatProvider {
 	 * provideLanguageModelChatInformation call returns immediately.
 	 */
 	async prefetchModels(): Promise<void> {
-		try {
-			await this._modelsService.prepareLanguageModelChatInformation(
-				this.secrets,
-				{ silent: true },
-				new vscode.CancellationTokenSource().token
-			);
-			console.log("[Synthetic] Models prefetched successfully");
-		} catch (err) {
-			console.warn("[Synthetic] Model prefetch failed:", err);
-		}
+		await this._modelsService.prepareLanguageModelChatInformation(
+			this.secrets,
+			{ silent: true },
+			new vscode.CancellationTokenSource().token
+		);
 	}
 
 	async provideLanguageModelChatInformation(
 		options: { silent: boolean },
 		_token: CancellationToken
 	): Promise<LanguageModelChatInformation[]> {
-		console.log("[Synthetic] provideLanguageModelChatInformation called, silent:", options.silent);
 		const info = await this._modelsService.prepareLanguageModelChatInformation(
 			this.secrets,
 			{ silent: options.silent ?? false },
 			_token
 		);
-		console.log("[Synthetic] provideLanguageModelChatInformation returned models:", info.length);
 		return info;
 	}
 
@@ -76,9 +69,7 @@ export class SyntheticChatModelProvider implements LanguageModelChatProvider {
 		token: CancellationToken
 	): Promise<void> {
 		const apiKey = await this._modelsService.ensureApiKey(this.secrets, true);
-		console.log("[Synthetic] provideLanguageModelChatResponse - apiKey found:", !!apiKey);
 		if (!apiKey) {
-			console.error("[Synthetic] provideLanguageModelChatResponse - No API key!");
 			throw new Error("Synthetic API key not found");
 		}
 
@@ -106,10 +97,7 @@ export class SyntheticChatModelProvider implements LanguageModelChatProvider {
 				timeout: 30000, // 30 second timeout for individual requests
 			});
 
-			const streamStartTime = Date.now();
 			const stream = await openai.chat.completions.create(openAIRequest);
-			console.log("[Synthetic] Stream started for model:", model.id, "in", Date.now() - streamStartTime, "ms");
-
 			const thinkParser = new ThinkTagParser();
 			const toolCallStates = new Map<number, ToolCallAccumulator>();
 			const emitToolCallIfReady = (index: number, state: ToolCallAccumulator) => {

@@ -77,11 +77,9 @@ export class SyntheticModelsService {
 		if (process.env.NODE_ENV !== "test") {
 			const now = Date.now();
 			if (this._modelsCache && now - this._modelsCache.fetchedAt < SyntheticModelsService.MODELS_CACHE_TTL_MS) {
-				console.log("[Synthetic] Using cached models");
 				return { models: this._modelsCache.models };
 			}
 		}
-		console.log("[Synthetic] Fetching models from API...");
 		try {
 			// Fetch with timeout
 			const controller = new AbortController();
@@ -138,7 +136,6 @@ export class SyntheticModelsService {
 			}
 			// Update cache
 			this._modelsCache = { models, fetchedAt: Date.now() };
-			console.log("[Synthetic] Models fetched and cached:", models.length);
 			return { models };
 		} catch (error) {
 			if (error instanceof Error) {
@@ -176,8 +173,11 @@ export class SyntheticModelsService {
 				attempt++;
 				if (attempt >= maxRetries) {
 					console.error("[Synthetic Model Provider] Failed to fetch model details after retries:", err);
+					// Note: We don't emit user messages here since this is a fallback operation
+					// and will be handled gracefully by returning null
 					throw err;
 				}
+				// Optionally add a delay before retrying
 				await new Promise((res) => setTimeout(res, 500 * attempt));
 			}
 		}
@@ -186,13 +186,14 @@ export class SyntheticModelsService {
 		const [err, data] = tryit(() => SyntheticModelsDevApiResponseSchema.parse(rawData))();
 		if (err) {
 			console.error("[Synthetic Model Provider] Model details validation failed:", err);
+			// Note: We don't emit user messages here since this is a fallback operation
+			// and the main error handling in prepareLanguageModelChatInformation will handle user notification
 			throw new Error(
 				`Invalid model details API response format: ${err instanceof Error ? err.message : "Unknown validation error"}`
 			);
 		}
 
 		this._modelDetailsCache = data.synthetic.models;
-		console.log("[Synthetic] Model details cache populated, keys:", Object.keys(this._modelDetailsCache).length);
 	}
 
 	/**
@@ -214,6 +215,7 @@ export class SyntheticModelsService {
 			return null;
 		}
 
+		// Map model details to LanguageModelChatInformation properties
 		const capabilities: ExtendedCapabilities = {
 			toolCalling: modelDetails.tool_call || false,
 			imageInput: modelDetails.modalities?.input?.includes("image") || false,
@@ -230,7 +232,6 @@ export class SyntheticModelsService {
 			capabilities,
 		};
 
-		console.log("[Synthetic] Hydrated model:", modelId, "=>", hydratedInfo.name);
 		return hydratedInfo;
 	}
 
@@ -240,7 +241,6 @@ export class SyntheticModelsService {
 	 * @returns The hydrated model information or null if not found or tool_call is false
 	 */
 	async hydrateModelId(modelId: string): Promise<Partial<import("vscode").LanguageModelChatInformation> | null> {
-		console.log("[Synthetic] hydrateModelId called for:", modelId);
 		try {
 			// If cache is already populated, just build info directly
 			if (this._modelDetailsCache) {
@@ -260,7 +260,7 @@ export class SyntheticModelsService {
 			return this._buildHydratedInfo(modelId);
 		} catch (error) {
 			this._fetchingModelDetails = null;
-			console.error("[Synthetic] Failed to hydrate model ID:", modelId, error);
+			console.error("[Synthetic Model Provider] Failed to hydrate model ID:", modelId, error);
 			return null;
 		}
 	}
@@ -278,17 +278,14 @@ export class SyntheticModelsService {
 		_token: CancellationToken
 	): Promise<LanguageModelChatInformation[]> {
 		const apiKey = await this.ensureApiKey(secrets, options.silent);
-		console.log("[Synthetic] prepareLanguageModelChatInformation - apiKey found:", !!apiKey);
 		if (!apiKey) {
 			return [];
 		}
 
 		let models;
 		try {
-			console.log("[Synthetic] Fetching models...");
 			const result = await this.fetchModels(apiKey);
 			models = result.models;
-			console.log("[Synthetic] Fetched models count:", models.length);
 		} catch (error) {
 			console.error("[Synthetic Model Provider] Failed to prepare model information:", error);
 
@@ -307,7 +304,7 @@ export class SyntheticModelsService {
 		// Hydrate models in parallel for speed
 		const hydrationPromises = models.map(async (m) => {
 			try {
-				console.log("[Synthetic] Hydrating model:", m.id);
+				// Try to hydrate model information
 				const hydratedInfo = await this.hydrateModelId(m.id);
 
 				// Use hydrated information if available, otherwise fall back to defaults
@@ -347,7 +344,6 @@ export class SyntheticModelsService {
 		// Wait for all hydration to complete in parallel
 		await Promise.allSettled(hydrationPromises);
 
-		console.log("[Synthetic] Hydration complete, models processed:", infos.length);
 		return infos;
 	}
 }
