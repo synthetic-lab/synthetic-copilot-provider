@@ -2,18 +2,26 @@ import * as vscode from "vscode";
 import { SyntheticChatModelProvider } from "./provider";
 import { showTemperatureConfigUI } from "./config";
 
-export function activate(context: vscode.ExtensionContext) {
-	// Build a descriptive User-Agent to help quantify API usage
+export async function activate(context: vscode.ExtensionContext) {
+	console.log("[Synthetic] Extension activating...");
 	const ext = vscode.extensions.getExtension("synthetic-vscode-chat");
 	const extVersion = ext?.packageJSON?.version ?? "unknown";
 	const vscodeVersion = vscode.version;
-	// Keep UA minimal: only extension version and VS Code version
 	const ua = `synthetic-vscode-chat/${extVersion} VSCode/${vscodeVersion}`;
 
 	const provider = new SyntheticChatModelProvider(context.secrets, ua);
-	// Register the Synthetic provider under the vendor id used in package.json
+
+	// Register the Synthetic provider IMMEDIATELY — don't block activation.
 	vscode.lm.registerLanguageModelChatProvider("synthetic", provider);
-	// Management command to configure API key
+	console.log("[Synthetic] Provider registered, extension activated");
+
+	// Prefetch models in the BACKGROUND (non-blocking).
+	// If VS Code calls provideLanguageModelChatInformation before prefetch completes,
+	// the fetch lock ensures only one fetch runs and both paths wait for the same result.
+	provider.prefetchModels().catch((err) => {
+		console.warn("[Synthetic] Model prefetch failed (will retry on demand):", err);
+	});
+
 	context.subscriptions.push(
 		vscode.commands.registerCommand("synthetic.manage", async () => {
 			const existing = await context.secrets.get("synthetic.apiKey");
@@ -25,7 +33,7 @@ export function activate(context: vscode.ExtensionContext) {
 				value: existing ?? "",
 			});
 			if (apiKey === undefined) {
-				return; // user canceled
+				return;
 			}
 			if (!apiKey.trim()) {
 				await context.secrets.delete("synthetic.apiKey");
@@ -36,7 +44,7 @@ export function activate(context: vscode.ExtensionContext) {
 			vscode.window.showInformationMessage("Synthetic API key saved.");
 		})
 	);
-	// Command to configure model temperature
+
 	context.subscriptions.push(
 		vscode.commands.registerCommand("synthetic.configureTemperature", async () => {
 			await showTemperatureConfigUI(context.secrets);
@@ -44,4 +52,4 @@ export function activate(context: vscode.ExtensionContext) {
 	);
 }
 
-export function deactivate() { }
+export function deactivate() {}
