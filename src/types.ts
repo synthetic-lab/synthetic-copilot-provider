@@ -57,7 +57,9 @@ const SyntheticModelDetailsSchema = z.object({
 	// Required OpenRouter params that are not provided for non-self-hosted models.
 	created: z.number().optional(),
 	max_output_length: z.number().optional(),
-	quantization: QuantizationSpec.optional(),
+	// Accept known quantization types and any future values the API may introduce,
+	// so an unrecognized label never fails the entire model list.
+	quantization: QuantizationSpec.or(z.string()).optional(),
 	supported_sampling_parameters: z.array(SamplingParameterSpec).optional(),
 	supported_features: z.array(ModelFeatureSpec).optional(),
 
